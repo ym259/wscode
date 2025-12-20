@@ -1,0 +1,68 @@
+.tree {
+    display: flex;
+    flex-direction: column;
+}
+
+.item {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-xs);
+    padding: 4px var(--spacing-sm);
+    cursor: pointer;
+    transition: background var(--transition-fast);
+    user-select: none;
+}
+
+.item:hover {
+    background: var(--bg-hover);
+}
+
+.item.active {
+    background: var(--bg-selected);
+}
+
+.chevron {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 16px;
+    height: 16px;
+    color: var(--text-secondary);
+}
+
+.folderIcon {
+    color: var(--icon-folder);
+    flex-shrink: 0;
+}
+
+.fileIcon {
+    color: var(--icon-file);
+    flex-shrink: 0;
+}
+
+.name {
+    flex: 1;
+    font-size: var(--font-size-sm);
+    color: var(--text-primary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.loading {
+    font-size: var(--font-size-xs);
+    color: var(--text-secondary);
+    animation: pulse 1s ease-in-out infinite;
+}
+
+@keyframes pulse {
+
+    0%,
+    100% {
+        opacity: 1;
+    }
+
+    50% {
+        opacity: 0.5;
+    }
+}

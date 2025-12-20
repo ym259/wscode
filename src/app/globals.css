@@ -1,42 +1,230 @@
+/* VS Code Dark Theme - Design System */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
+  /* Background colors */
+  --bg-base: #1e1e1e;
+  --bg-sidebar: #252526;
+  --bg-activity-bar: #333333;
+  --bg-editor: #1e1e1e;
+  --bg-panel: #252526;
+  --bg-tab: #2d2d2d;
+  --bg-tab-active: #1e1e1e;
+  --bg-hover: #2a2d2e;
+  --bg-selected: #094771;
+  --bg-input: #3c3c3c;
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
+  /* Border colors */
+  --border-color: #3c3c3c;
+  --border-active: #007acc;
 
-html,
-body {
-  max-width: 100vw;
-  overflow-x: hidden;
-}
+  /* Text colors */
+  --text-primary: #cccccc;
+  --text-secondary: #969696;
+  --text-muted: #6e6e6e;
+  --text-bright: #ffffff;
+  --text-accent: #4fc1ff;
 
-body {
-  color: var(--foreground);
-  background: var(--background);
-  font-family: Arial, Helvetica, sans-serif;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
+  /* Accent colors */
+  --accent-primary: #007acc;
+  --accent-secondary: #0e639c;
+  --accent-hover: #1177bb;
+  --accent-success: #4ec9b0;
+  --accent-warning: #ce9178;
+  --accent-error: #f14c4c;
+
+  /* Icon colors */
+  --icon-foreground: #c5c5c5;
+  --icon-folder: #dcb67a;
+  --icon-file: #519aba;
+
+  /* Sizing */
+  --activity-bar-width: 48px;
+  --sidebar-width: 260px;
+  --panel-width: 350px;
+  --title-bar-height: 35px;
+  --status-bar-height: 22px;
+  --tab-height: 35px;
+
+  /* Spacing */
+  --spacing-xs: 4px;
+  --spacing-sm: 8px;
+  --spacing-md: 12px;
+  --spacing-lg: 16px;
+  --spacing-xl: 24px;
+
+  /* Typography */
+  --font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+  --font-mono: 'SF Mono', Menlo, Monaco, 'Courier New', monospace;
+  --font-size-xs: 11px;
+  --font-size-sm: 12px;
+  --font-size-md: 13px;
+  --font-size-lg: 14px;
+
+  /* Transitions */
+  --transition-fast: 0.1s ease;
+  --transition-normal: 0.2s ease;
+
+  /* Shadows */
+  --shadow-dropdown: 0 4px 12px rgba(0, 0, 0, 0.4);
+  --shadow-panel: 0 0 8px rgba(0, 0, 0, 0.3);
+
+  /* SuperDoc Toolbar overrides for dark theme */
+  --toolbar-bg: var(--bg-editor);
+  --toolbar-border: var(--border-color);
+  --toolbar-button-hover: var(--bg-hover);
+  --toolbar-button-active: var(--bg-selected);
+  --toolbar-button-color: var(--text-primary);
+  --toolbar-icon-color: var(--icon-foreground);
+  --toolbar-button-size: 32px;
 }
 
 * {
   box-sizing: border-box;
-  padding: 0;
   margin: 0;
+  padding: 0;
 }
 
-a {
+html,
+body {
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
+  font-family: var(--font-family);
+  font-size: var(--font-size-md);
+  color: var(--text-primary);
+  background-color: var(--bg-base);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(121, 121, 121, 0.4);
+  border-radius: 5px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(121, 121, 121, 0.7);
+}
+
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+/* Selection styling */
+::selection {
+  background: var(--accent-primary);
+  color: var(--text-bright);
+}
+
+/* Focus styling */
+:focus {
+  outline: none;
+}
+
+:focus-visible {
+  outline: 1px solid var(--accent-primary);
+  outline-offset: -1px;
+}
+
+/* Button reset */
+button {
+  font-family: inherit;
+  font-size: inherit;
   color: inherit;
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+/* Input reset */
+input,
+textarea {
+  font-family: inherit;
+  font-size: inherit;
+  color: var(--text-primary);
+  background: var(--bg-input);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  padding: var(--spacing-sm);
+}
+
+input:focus,
+textarea:focus {
+  border-color: var(--accent-primary);
+}
+
+/* Link reset */
+a {
+  color: var(--text-accent);
   text-decoration: none;
 }
 
-@media (prefers-color-scheme: dark) {
-  html {
-    color-scheme: dark;
-  }
+a:hover {
+  text-decoration: underline;
+}
+
+/* Utility classes */
+.text-ellipsis {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.flex {
+  display: flex;
+}
+
+.flex-1 {
+  flex: 1;
+}
+
+.items-center {
+  align-items: center;
+}
+
+.justify-center {
+  justify-content: center;
+}
+
+.gap-xs {
+  gap: var(--spacing-xs);
+}
+
+.gap-sm {
+  gap: var(--spacing-sm);
+}
+
+/* Icon button utility */
+.icon-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 4px;
+  color: var(--icon-foreground);
+  transition: background var(--transition-fast);
+}
+
+.icon-button:hover {
+  background: var(--bg-hover);
+}
+
+.icon-button svg {
+  width: 16px;
+  height: 16px;
 }

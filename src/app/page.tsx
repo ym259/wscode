@@ -1,66 +1,85 @@
-import Image from "next/image";
-import styles from "./page.module.css";
+'use client';
+
+import React, { useState } from 'react';
+import { WorkspaceProvider, useWorkspace } from '@/contexts/WorkspaceContext';
+import ActivityBar from '@/components/layout/ActivityBar';
+import StatusBar from '@/components/layout/StatusBar';
+import FileExplorer from '@/components/explorer/FileExplorer';
+import EditorPanel from '@/components/editor/EditorPanel';
+import AgentPanel from '@/components/agent/AgentPanel';
+import { Sparkles } from 'lucide-react';
+import styles from './page.module.css';
+
+function IDELayout() {
+  const { isPanelOpen, togglePanel } = useWorkspace();
+  const [activeView, setActiveView] = useState('explorer');
+  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+
+  const handleViewChange = (view: string) => {
+    if (view === activeView) {
+      setIsSidebarOpen(!isSidebarOpen);
+    } else {
+      setActiveView(view);
+      setIsSidebarOpen(true);
+    }
+  };
+
+  return (
+    <div className={styles.container}>
+      <div className={styles.main}>
+        <ActivityBar
+          activeView={activeView}
+          onViewChange={handleViewChange}
+        />
+
+        {isSidebarOpen && (
+          <div className={styles.sidebar}>
+            {activeView === 'explorer' && <FileExplorer onClose={() => setIsSidebarOpen(false)} />}
+            {activeView === 'search' && (
+              <div className={styles.placeholder}>
+                <p>Search</p>
+                <span>Coming soon</span>
+              </div>
+            )}
+            {activeView === 'git' && (
+              <div className={styles.placeholder}>
+                <p>Source Control</p>
+                <span>Coming soon</span>
+              </div>
+            )}
+          </div>
+        )}
+
+        <div className={styles.editor}>
+          <EditorPanel />
+        </div>
+
+        {isPanelOpen && (
+          <div className={styles.panel}>
+            <AgentPanel isOpen={isPanelOpen} onClose={togglePanel} />
+          </div>
+        )}
+      </div>
+
+      {!isPanelOpen && (
+        <button
+          className={styles.floatingChatToggle}
+          onClick={togglePanel}
+          title="Open AI Assistant"
+        >
+          <Sparkles size={24} />
+        </button>
+      )}
+
+      <StatusBar />
+    </div>
+  );
+}
 
 export default function Home() {
   return (
-    <div className={styles.page}>
-      <main className={styles.main}>
-        <Image
-          className={styles.logo}
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className={styles.intro}>
-          <h1>To get started, edit the page.tsx file.</h1>
-          <p>
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
-        </div>
-        <div className={styles.ctas}>
-          <a
-            className={styles.primary}
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className={styles.logo}
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className={styles.secondary}
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
-      </main>
-    </div>
+    <WorkspaceProvider>
+      <IDELayout />
+    </WorkspaceProvider>
   );
 }

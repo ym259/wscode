@@ -1,0 +1,51 @@
+.activityBar {
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    width: var(--activity-bar-width);
+    height: 100%;
+    background: var(--bg-activity-bar);
+    border-right: 1px solid var(--border-color);
+}
+
+.topSection,
+.bottomSection {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: var(--spacing-xs) 0;
+}
+
+.activityButton {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    height: 48px;
+    color: var(--text-secondary);
+    position: relative;
+    transition: color var(--transition-fast);
+}
+
+.activityButton:hover {
+    color: var(--text-primary);
+}
+
+.activityButton.active {
+    color: var(--text-bright);
+}
+
+.activityButton.active::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 2px;
+    background: var(--accent-primary);
+}
+
+.activityButton svg {
+    width: 24px;
+    height: 24px;
+}

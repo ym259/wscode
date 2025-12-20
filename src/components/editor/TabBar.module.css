@@ -1,0 +1,88 @@
+.tabBar {
+    display: flex;
+    align-items: center;
+    height: var(--tab-height);
+    background: var(--bg-tab);
+    border-bottom: 1px solid var(--border-color);
+    overflow-x: auto;
+    overflow-y: hidden;
+}
+
+.tabBar::-webkit-scrollbar {
+    height: 3px;
+}
+
+.tabs {
+    display: flex;
+    height: 100%;
+}
+
+.tab {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-xs);
+    height: 100%;
+    padding: 0 var(--spacing-md);
+    padding-right: var(--spacing-sm);
+    background: var(--bg-tab);
+    border-right: 1px solid var(--border-color);
+    cursor: pointer;
+    transition: background var(--transition-fast);
+    min-width: 120px;
+    max-width: 200px;
+}
+
+.tab:hover {
+    background: var(--bg-hover);
+}
+
+.tab.active {
+    background: var(--bg-tab-active);
+    border-bottom: 1px solid var(--bg-tab-active);
+    margin-bottom: -1px;
+}
+
+.tabIcon {
+    flex-shrink: 0;
+    color: var(--icon-file);
+}
+
+.tabName {
+    flex: 1;
+    font-size: var(--font-size-sm);
+    color: var(--text-secondary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.tab.active .tabName {
+    color: var(--text-primary);
+}
+
+.dirty {
+    color: var(--text-bright);
+    font-size: 8px;
+    margin-left: var(--spacing-xs);
+}
+
+.closeButton {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    border-radius: 4px;
+    color: var(--text-secondary);
+    opacity: 0;
+    transition: all var(--transition-fast);
+}
+
+.tab:hover .closeButton {
+    opacity: 1;
+}
+
+.closeButton:hover {
+    background: var(--bg-hover);
+    color: var(--text-primary);
+}

@@ -1,0 +1,504 @@
+.panel {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    background: var(--bg-panel);
+    border-left: 1px solid var(--border-color);
+}
+
+.header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: var(--spacing-sm) var(--spacing-md);
+    border-bottom: 1px solid var(--border-color);
+}
+
+.headerTitle {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-sm);
+    font-size: var(--font-size-sm);
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.sparkle {
+    color: var(--accent-primary);
+}
+
+.closeButton {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    border-radius: 4px;
+    color: var(--text-secondary);
+    transition: all var(--transition-fast);
+}
+
+.closeButton:hover {
+    background: var(--bg-hover);
+    color: var(--text-primary);
+}
+
+.messages {
+    flex: 1;
+    overflow-y: auto;
+    padding: var(--spacing-md);
+}
+
+.emptyState {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    text-align: center;
+    gap: var(--spacing-md);
+    padding: var(--spacing-xl);
+}
+
+.emptyIcon {
+    color: var(--accent-primary);
+    opacity: 0.5;
+}
+
+.emptyState h3 {
+    font-size: var(--font-size-lg);
+    font-weight: 500;
+    color: var(--text-primary);
+    margin: 0;
+}
+
+.emptyState p {
+    font-size: var(--font-size-sm);
+    color: var(--text-secondary);
+    margin: 0;
+}
+
+.suggestions {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-sm);
+    margin-top: var(--spacing-md);
+    width: 100%;
+}
+
+.suggestion {
+    padding: var(--spacing-sm) var(--spacing-md);
+    background: var(--bg-hover);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    font-size: var(--font-size-sm);
+    color: var(--text-primary);
+    text-align: left;
+    transition: all var(--transition-fast);
+}
+
+.suggestion:hover {
+    background: var(--bg-selected);
+    border-color: var(--accent-primary);
+}
+
+.message {
+    display: flex;
+    gap: var(--spacing-sm);
+    margin-bottom: var(--spacing-md);
+}
+
+.messageIcon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    flex-shrink: 0;
+}
+
+.user .messageIcon {
+    background: var(--accent-primary);
+    color: var(--text-bright);
+}
+
+.assistant .messageIcon {
+    background: var(--bg-hover);
+    color: var(--text-secondary);
+}
+
+.messageContent {
+    flex: 1;
+    min-width: 0;
+}
+
+.messageRole {
+    font-size: var(--font-size-xs);
+    font-weight: 600;
+    color: var(--text-secondary);
+    margin-bottom: var(--spacing-xs);
+}
+
+.messageText {
+    font-size: var(--font-size-sm);
+    color: var(--text-primary);
+    line-height: 1.5;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
+.typing {
+    display: flex;
+    gap: 4px;
+    padding: var(--spacing-sm) 0;
+}
+
+.typing span {
+    width: 8px;
+    height: 8px;
+    background: var(--text-secondary);
+    border-radius: 50%;
+    animation: bounce 1.4s ease-in-out infinite;
+}
+
+.typing span:nth-child(1) {
+    animation-delay: 0s;
+}
+
+.typing span:nth-child(2) {
+    animation-delay: 0.2s;
+}
+
+.typing span:nth-child(3) {
+    animation-delay: 0.4s;
+}
+
+@keyframes bounce {
+
+    0%,
+    60%,
+    100% {
+        transform: translateY(0);
+    }
+
+    30% {
+        transform: translateY(-4px);
+    }
+}
+
+.inputArea {
+    position: relative;
+    padding: var(--spacing-md);
+    border-top: 1px solid var(--border-color);
+}
+
+.inputWrapper {
+    display: flex;
+    align-items: flex-end;
+    gap: var(--spacing-sm);
+    background: var(--bg-input);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    padding: var(--spacing-xs) var(--spacing-sm);
+    transition: border-color var(--transition-fast);
+}
+
+.inputWrapper:focus-within {
+    border-color: var(--accent-primary);
+}
+
+.input {
+    flex: 1;
+    background: transparent;
+    border: none;
+    padding: var(--spacing-sm) 0;
+    font-size: var(--font-size-sm);
+    color: var(--text-primary);
+    resize: none;
+    min-height: 20px;
+    max-height: 200px;
+    line-height: 1.5;
+    font-family: inherit;
+    outline: none;
+}
+
+.input::placeholder {
+    color: var(--text-muted);
+}
+
+.sendButton {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    background: var(--accent-primary);
+    border-radius: 6px;
+    color: var(--text-bright);
+    transition: all var(--transition-fast);
+    margin-bottom: var(--spacing-xs);
+    flex-shrink: 0;
+}
+
+.sendButton:hover:not(:disabled) {
+    background: var(--accent-hover);
+}
+
+.sendButton:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.hint {
+    margin: var(--spacing-sm) 0 0 0;
+    font-size: var(--font-size-xs);
+    color: var(--text-muted);
+    text-align: center;
+}
+
+/* Tool Calls */
+.toolCalls {
+    margin-bottom: var(--spacing-sm);
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.toolCall {
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    background: var(--bg-hover);
+    overflow: hidden;
+}
+
+.toolHeader {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-sm);
+    padding: 6px 8px;
+    cursor: pointer;
+    font-size: var(--font-size-xs);
+    user-select: none;
+    transition: background var(--transition-fast);
+}
+
+.toolHeader:hover {
+    background: var(--bg-selected);
+}
+
+.toolIcon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--accent-primary);
+}
+
+.toolName {
+    font-weight: 500;
+    color: var(--text-primary);
+    flex: 1;
+    font-family: monospace;
+}
+
+.toolStatus {
+    font-size: 10px;
+    padding: 2px 4px;
+    border-radius: 4px;
+    background: var(--bg-panel);
+    color: var(--text-secondary);
+}
+
+.toolDetails {
+    padding: 8px;
+    border-top: 1px solid var(--border-color);
+    background: var(--bg-panel);
+    font-size: var(--font-size-xs);
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.toolSection {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.label {
+    font-weight: 600;
+    color: var(--text-secondary);
+}
+
+.toolDetails pre {
+    margin: 0;
+    padding: 8px;
+    background: var(--bg-code);
+    border-radius: 4px;
+    overflow-x: auto;
+    font-family: monospace;
+    white-space: pre-wrap;
+    word-break: break-all;
+    color: var(--text-primary);
+}
+
+/* @mention popup */
+.mentionPopup {
+    position: absolute;
+    bottom: 100%;
+    left: 0;
+    right: 0;
+    background: var(--bg-panel);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    margin-bottom: var(--spacing-xs);
+    max-height: 200px;
+    overflow-y: auto;
+    box-shadow: 0 -4px 12px rgba(0, 0, 0, 0.15);
+    z-index: 10;
+}
+
+.mentionItem {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: var(--spacing-sm) var(--spacing-md);
+    cursor: pointer;
+    transition: background var(--transition-fast);
+}
+
+.mentionItem:hover,
+.mentionItemSelected {
+    background: var(--bg-selected);
+}
+
+.mentionFileName {
+    font-size: var(--font-size-sm);
+    font-weight: 500;
+    color: var(--text-primary);
+}
+
+.mentionFilePath {
+    font-size: var(--font-size-xs);
+    color: var(--text-secondary);
+    font-family: monospace;
+}
+
+/* File mention chips in messages */
+.fileMention {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 8px 2px 6px;
+    background: linear-gradient(135deg, rgba(59, 130, 246, 0.15), rgba(147, 51, 234, 0.15));
+    border: 1px solid rgba(59, 130, 246, 0.3);
+    border-radius: 4px;
+    font-size: var(--font-size-xs);
+    font-family: monospace;
+    color: #60a5fa;
+    vertical-align: middle;
+    margin: 0 2px;
+    transition: all var(--transition-fast);
+}
+
+.fileMention:hover {
+    background: linear-gradient(135deg, rgba(59, 130, 246, 0.25), rgba(147, 51, 234, 0.25));
+    border-color: rgba(59, 130, 246, 0.5);
+}
+
+.fileMentionIcon {
+    color: #a78bfa;
+    flex-shrink: 0;
+}
+
+.fileMentionName {
+    font-weight: 500;
+}
+
+/* Reasoning Block */
+.reasoning {
+    border: 1px solid rgba(251, 191, 36, 0.3);
+    border-radius: 6px;
+    background: linear-gradient(135deg, rgba(251, 191, 36, 0.08), rgba(245, 158, 11, 0.05));
+    overflow: hidden;
+    margin-bottom: var(--spacing-sm);
+}
+
+.reasoningHeader {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-sm);
+    padding: 6px 8px;
+    cursor: pointer;
+    font-size: var(--font-size-xs);
+    user-select: none;
+    transition: background var(--transition-fast);
+    color: #fbbf24;
+}
+
+.reasoningHeader:hover {
+    background: rgba(251, 191, 36, 0.12);
+}
+
+.reasoningLabel {
+    flex: 1;
+    font-weight: 500;
+}
+
+.reasoningContent {
+    padding: 8px 12px;
+    border-top: 1px solid rgba(251, 191, 36, 0.2);
+    font-size: var(--font-size-xs);
+    color: var(--text-secondary);
+    white-space: pre-wrap;
+    line-height: 1.5;
+    background: rgba(0, 0, 0, 0.1);
+}
+
+.reasoningCursor {
+    display: inline-block;
+    color: #fbbf24;
+    animation: blink 1s ease-in-out infinite;
+    margin-left: 2px;
+}
+
+@keyframes blink {
+
+    0%,
+    50% {
+        opacity: 1;
+    }
+
+    51%,
+    100% {
+        opacity: 0;
+    }
+}
+
+/* Streaming dots indicator */
+.streamingDots {
+    display: flex;
+    gap: 4px;
+    padding: var(--spacing-xs) 0;
+    margin-bottom: var(--spacing-xs);
+}
+
+.streamingDots span {
+    width: 6px;
+    height: 6px;
+    background: var(--accent-primary);
+    border-radius: 50%;
+    animation: bounce 1.4s ease-in-out infinite;
+}
+
+.streamingDots span:nth-child(1) {
+    animation-delay: 0s;
+}
+
+.streamingDots span:nth-child(2) {
+    animation-delay: 0.2s;
+}
+
+.streamingDots span:nth-child(3) {
+    animation-delay: 0.4s;
+}

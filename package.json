@@ -9,11 +9,18 @@
     "lint": "eslint"
   },
   "dependencies": {
+    "@harbour-enterprises/superdoc": "^0.36.0",
+    "@openai/agents": "^0.3.7",
+    "@superdoc-dev/ai": "^0.1.6",
+    "lucide-react": "^0.562.0",
+    "mammoth": "^1.11.0",
     "next": "16.1.0",
+    "openai": "^6.15.0",
     "react": "19.2.3",
     "react-dom": "19.2.3"
   },
   "devDependencies": {
+    "@tiptap/core": "^3.13.0",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
