@@ -5,28 +5,6 @@ export const getFormattingTools = (context: ToolContext): ToolDefinition[] => {
 
     return [
         createTool(
-            'toggleHeading',
-            'Turn the current line/selection into a heading.',
-            {
-                type: 'object',
-                properties: { level: { type: 'integer', enum: [1, 2, 3, 4, 5, 6] } },
-                required: ['level'],
-                additionalProperties: false
-            },
-            async ({ level }: { level: number }) => {
-                const editor = getEditor();
-                if (!editor) throw new Error('Editor not initialized');
-                try {
-                    if (typeof editor.focus === 'function') editor.focus();
-                    editor.chain().toggleHeading({ level: level as any }).run();
-                    return `Applied Heading ${level}`;
-                } catch (error) {
-                    console.error('[toggleHeading] Error:', error);
-                    return `Failed to apply heading: ${error instanceof Error ? error.message : 'Unknown error'}`;
-                }
-            }
-        ),
-        createTool(
             'setTextAlignment',
             'Set text alignment for the current selection.',
             {

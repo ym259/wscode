@@ -65,20 +65,142 @@ export const getContentTools = (context: ToolContext): ToolDefinition[] => {
             async ({ instruction }: { instruction: string }) => await getActionMethods().summarize(instruction)
         ),
         createTool(
-            'literalReplace',
-            'Find and replace exact text matches.',
+            'editText',
+            'Find text and optionally replace it, then apply formatting styles. The primary tool for text editing and styling. For style-only operations (no text change), omit the "replace" parameter.',
             {
                 type: 'object',
                 properties: {
-                    find: { type: 'string' },
-                    replace: { type: 'string' },
-                    trackChanges: { type: 'boolean' }
+                    find: { type: 'string', description: 'Text to find (e.g., "**important**" for markdown bold, or just "Title" to apply styles without replacement)' },
+                    replace: { type: 'string', description: 'Optional: Replacement text. If omitted, text is not replaced (style-only mode).' },
+                    trackChanges: { type: 'boolean', description: 'Whether to track changes (only applies if text is replaced)' },
+                    headingLevel: {
+                        type: 'integer',
+                        enum: [1, 2, 3, 4, 5, 6],
+                        description: 'Apply heading style (1-6).'
+                    },
+                    bold: {
+                        type: 'boolean',
+                        description: 'Apply bold formatting.'
+                    },
+                    italic: {
+                        type: 'boolean',
+                        description: 'Apply italic formatting.'
+                    },
+                    underline: {
+                        type: 'boolean',
+                        description: 'Apply underline formatting.'
+                    },
+                    strikethrough: {
+                        type: 'boolean',
+                        description: 'Apply strikethrough formatting.'
+                    },
+                    code: {
+                        type: 'boolean',
+                        description: 'Apply inline code formatting.'
+                    }
                 },
-                required: ['find', 'replace', 'trackChanges'],
+                required: ['find'],
                 additionalProperties: false
             },
-            async ({ find, replace, trackChanges }: { find: string, replace: string, trackChanges?: boolean }) =>
-                await getActionMethods().literalReplace(find, replace, trackChanges)
+            async ({ find, replace, trackChanges, headingLevel, bold, italic, underline, strikethrough, code }: {
+                find: string,
+                replace?: string,
+                trackChanges?: boolean,
+                headingLevel?: number,
+                bold?: boolean,
+                italic?: boolean,
+                underline?: boolean,
+                strikethrough?: boolean,
+                code?: boolean
+            }) => {
+                const editor = getEditor();
+                if (!editor) throw new Error('Editor not initialized');
+
+                // Determine effective replacement text (defaults to find for style-only)
+                const effectiveReplace = replace !== undefined ? replace : find;
+                const isReplacing = replace !== undefined && replace !== find;
+
+                let result = '';
+
+                // Only call literalReplace if actually replacing text
+                if (isReplacing) {
+                    result = await getActionMethods().literalReplace(find, effectiveReplace, trackChanges);
+                } else {
+                    result = `Found "${find}"`;
+                }
+
+                // Check if any styling needs to be applied
+                const hasStyles = headingLevel || bold || italic || underline || strikethrough || code;
+
+                // Find the position of the text (either original or replaced)
+                const searchText = effectiveReplace.toLowerCase();
+                let foundFrom = -1;
+                let foundTo = -1;
+
+                editor.state.doc.descendants((node: any, pos: number) => {
+                    if (foundFrom > -1) return false;
+                    if (node.isText) {
+                        const nodeText = node.text!.toLowerCase();
+                        const idx = nodeText.indexOf(searchText);
+                        if (idx > -1) {
+                            foundFrom = pos + idx;
+                            foundTo = foundFrom + effectiveReplace.length;
+                            return false;
+                        }
+                    }
+                    return true;
+                });
+
+                if (foundFrom === -1) {
+                    return `Text "${find}" not found in document.`;
+                }
+
+                if (hasStyles) {
+                    // Build a chain of formatting commands
+                    let chain = editor.chain().setTextSelection({ from: foundFrom, to: foundTo });
+                    const appliedStyles: string[] = [];
+
+                    // Apply heading if specified
+                    if (headingLevel && headingLevel >= 1 && headingLevel <= 6) {
+                        chain = chain.toggleHeading({ level: headingLevel as any });
+                        appliedStyles.push(`Heading ${headingLevel}`);
+                    }
+
+                    // Apply inline styles
+                    if (bold) {
+                        chain = chain.setBold();
+                        appliedStyles.push('bold');
+                    }
+                    if (italic) {
+                        chain = chain.setItalic();
+                        appliedStyles.push('italic');
+                    }
+                    if (underline) {
+                        chain = chain.setUnderline();
+                        appliedStyles.push('underline');
+                    }
+                    if (strikethrough) {
+                        chain = chain.setStrike();
+                        appliedStyles.push('strikethrough');
+                    }
+                    if (code) {
+                        chain = chain.setCode();
+                        appliedStyles.push('code');
+                    }
+
+                    chain.run();
+
+                    if (appliedStyles.length > 0) {
+                        if (isReplacing) {
+                            return `Replaced "${find}" with "${effectiveReplace}" and applied ${appliedStyles.join(', ')}`;
+                        } else {
+                            return `Applied ${appliedStyles.join(', ')} to "${find}"`;
+                        }
+                    }
+                }
+
+                return result;
+            }
         ),
         createTool(
             'literalInsertComment',

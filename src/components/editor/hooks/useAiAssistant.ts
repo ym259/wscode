@@ -154,8 +154,11 @@ When the user refers to "this document", "the document", or makes requests witho
 - After inserting/deleting list items, ALWAYS call \`fixOrderedListNumbering\`
 
 ## Formatting
-1. First call \`selectText\` to select the range
-2. Then apply formatting (\`toggleHeading\`, \`setFontSize\`, etc.)
+- **Primary tool: \`editText\`** - Use for all text replacement and common formatting:
+  - Replace + style: \`editText({ find: "**bold**", replace: "bold", bold: true })\`
+  - Style only: \`editText({ find: "Title", headingLevel: 1 })\`
+  - Supports: \`headingLevel\`, \`bold\`, \`italic\`, \`underline\`, \`strikethrough\`, \`code\`
+- **Advanced formatting** (font size, alignment, line height): Use \`selectText\` first, then apply the specific tool
 
 ## Tables
 - Use \`afterText\` parameter to anchor table placement
@@ -167,6 +170,9 @@ When the user refers to "this document", "the document", or makes requests witho
   2. Use \`readDocument({ startIndex, endIndex })\` to read around search results
   3. Each block is roughly a paragraph/heading/list item (~100-200 chars)
 - Use \`readDocument({ includeStyles: true })\` for style validation
+
+## Bulk Operations
+- When replacing/fixing syles/updating many parts in document, execute the tools in parallel as much as possible.
 
 # Constraints
 - Preserve indentation, spacing, list structure, heading hierarchy
@@ -236,7 +242,7 @@ When the user refers to "this document", "the document", or makes requests witho
 
             // Custom ReAct-like Loop with Streaming using Responses API
             let loopCount = 0;
-            const MAX_LOOPS = 15;
+            const MAX_LOOPS = 50;
 
             // Convert tools to Responses API format
             const responsesApiTools = tools.map((t: any) => ({
@@ -255,6 +261,7 @@ When the user refers to "this document", "the document", or makes requests witho
                     model: 'gpt-5-mini',
                     input: messages as any,
                     tools: responsesApiTools,
+                    parallel_tool_calls: true,
                     stream: true,
                     reasoning: { summary: 'auto', effort: "low" }, // Enable reasoning summaries
                 });
