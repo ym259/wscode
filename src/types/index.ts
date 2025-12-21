@@ -1,3 +1,11 @@
+export interface AttachedSelection {
+    text: string;
+    fileName: string;
+    // Optional: start and end positions if available
+    startLine?: number;
+    endLine?: number;
+}
+
 export interface FileSystemItem {
     name: string;
     path: string;

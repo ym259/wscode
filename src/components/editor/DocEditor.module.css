@@ -89,6 +89,43 @@
     background: var(--bg-editor) !important;
 }
 
+/* SuperDoc Toolbar overrides for better contrast */
+:global(.sd-toolbar) {
+    background: var(--bg-sidebar) !important;
+    border-bottom: 1px solid var(--border-color) !important;
+}
+
+:global(.sd-toolbar button),
+:global(.sd-toolbar .sd-button),
+:global(.sd-toolbar [class*="button"]) {
+    color: var(--text-bright) !important;
+}
+
+:global(.sd-toolbar button:hover),
+:global(.sd-toolbar .sd-button:hover),
+:global(.sd-toolbar [class*="button"]:hover) {
+    background: var(--bg-hover) !important;
+}
+
+:global(.sd-toolbar svg),
+:global(.sd-toolbar path) {
+    fill: var(--text-bright) !important;
+    stroke: var(--text-bright) !important;
+    color: var(--text-bright) !important;
+}
+
+:global(.sd-toolbar select),
+:global(.sd-toolbar input) {
+    background: var(--bg-input) !important;
+    color: var(--text-bright) !important;
+    border-color: var(--border-color) !important;
+}
+
+:global(.sd-toolbar .sd-dropdown),
+:global(.sd-toolbar [class*="dropdown"]) {
+    color: var(--text-bright) !important;
+}
+
 :global(.superdoc-editor) {
     background: #ffffff !important;
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);

@@ -28,5 +28,8 @@ export interface ToolContext {
     getActionMethods: () => any;
     workspaceFiles?: any[];
     activeFilePath?: string;
+    activeFileHandle?: FileSystemFileHandle;
     superdoc?: any;
+    /** Callback for live cell updates in spreadsheets */
+    setCellValue?: (cell: string, value: string | number, sheetName?: string, isNumber?: boolean) => void;
 }

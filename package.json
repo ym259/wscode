@@ -9,6 +9,7 @@
     "lint": "eslint"
   },
   "dependencies": {
+    "@fortune-sheet/react": "^1.0.4",
     "@harbour-enterprises/superdoc": "^0.36.0",
     "@openai/agents": "^0.3.7",
     "@superdoc-dev/ai": "^0.1.6",
@@ -17,7 +18,8 @@
     "next": "16.1.0",
     "openai": "^6.15.0",
     "react": "19.2.3",
-    "react-dom": "19.2.3"
+    "react-dom": "19.2.3",
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "@tiptap/core": "^3.13.0",

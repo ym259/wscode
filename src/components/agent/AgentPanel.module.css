@@ -415,6 +415,47 @@
     font-weight: 500;
 }
 
+/* Selection mention in messages */
+.selectionMention {
+    display: inline-flex;
+    align-items: flex-start;
+    gap: 6px;
+    padding: 8px 12px;
+    background: linear-gradient(135deg, rgba(147, 51, 234, 0.12), rgba(59, 130, 246, 0.12));
+    border: 1px solid rgba(147, 51, 234, 0.25);
+    border-left: 3px solid #a78bfa;
+    border-radius: 6px;
+    font-size: var(--font-size-xs);
+    margin: var(--spacing-xs) 0;
+    max-width: 100%;
+}
+
+.selectionMentionIcon {
+    color: #a78bfa;
+    flex-shrink: 0;
+    margin-top: 2px;
+}
+
+.selectionMentionContent {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 0;
+}
+
+.selectionMentionFile {
+    font-weight: 600;
+    color: #a78bfa;
+    font-size: 10px;
+}
+
+.selectionMentionText {
+    color: var(--text-secondary);
+    font-style: italic;
+    line-height: 1.4;
+    word-break: break-word;
+}
+
 /* Reasoning Block */
 .reasoning {
     border: 1px solid rgba(251, 191, 36, 0.3);
@@ -501,4 +542,149 @@
 
 .streamingDots span:nth-child(3) {
     animation-delay: 0.4s;
+}
+
+/* Reasoning pulsing animation when streaming */
+.reasoningPulsing {
+    animation: reasoningPulse 2s ease-in-out infinite;
+}
+
+@keyframes reasoningPulse {
+
+    0%,
+    100% {
+        border-color: rgba(251, 191, 36, 0.3);
+        box-shadow: 0 0 0 0 rgba(251, 191, 36, 0);
+    }
+
+    50% {
+        border-color: rgba(251, 191, 36, 0.6);
+        box-shadow: 0 0 8px 2px rgba(251, 191, 36, 0.15);
+    }
+}
+
+.reasoningIconPulsing {
+    animation: iconPulse 1s ease-in-out infinite;
+}
+
+@keyframes iconPulse {
+
+    0%,
+    100% {
+        opacity: 0.6;
+    }
+
+    50% {
+        opacity: 1;
+    }
+}
+
+/* Tool status variants */
+.toolStatusRunning {
+    background: linear-gradient(135deg, rgba(59, 130, 246, 0.2), rgba(99, 102, 241, 0.2));
+    color: #60a5fa;
+    border: 1px solid rgba(59, 130, 246, 0.3);
+}
+
+.toolStatusSuccess {
+    background: rgba(34, 197, 94, 0.15);
+    color: #4ade80;
+}
+
+.toolStatusFailed {
+    background: rgba(239, 68, 68, 0.15);
+    color: #f87171;
+}
+
+.toolIconRunning {
+    animation: spin 1.5s linear infinite;
+}
+
+@keyframes spin {
+    from {
+        transform: rotate(0deg);
+    }
+
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+/* Attached Selection Chip */
+.attachedSelectionContainer {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--spacing-xs);
+    margin-bottom: var(--spacing-sm);
+}
+
+.attachedSelectionChip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 10px 6px 10px;
+    background: linear-gradient(135deg, rgba(147, 51, 234, 0.15), rgba(59, 130, 246, 0.15));
+    border: 1px solid rgba(147, 51, 234, 0.35);
+    border-radius: 6px;
+    font-size: var(--font-size-xs);
+    color: var(--text-primary);
+    max-width: 100%;
+    animation: chipAppear 0.2s ease-out;
+}
+
+@keyframes chipAppear {
+    from {
+        opacity: 0;
+        transform: scale(0.95);
+    }
+
+    to {
+        opacity: 1;
+        transform: scale(1);
+    }
+}
+
+.chipIcon {
+    color: #a78bfa;
+    flex-shrink: 0;
+}
+
+.chipContent {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+    flex: 1;
+}
+
+.chipFileName {
+    font-weight: 500;
+    color: #a78bfa;
+    font-size: 10px;
+}
+
+.chipText {
+    color: var(--text-secondary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 200px;
+    font-style: italic;
+}
+
+.chipRemoveButton {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 16px;
+    height: 16px;
+    border-radius: 4px;
+    color: var(--text-secondary);
+    transition: all var(--transition-fast);
+    flex-shrink: 0;
+}
+
+.chipRemoveButton:hover {
+    background: rgba(255, 255, 255, 0.1);
+    color: var(--text-primary);
 }

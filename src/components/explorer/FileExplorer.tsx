@@ -32,7 +32,7 @@ async function readDirectory(
         } else {
             // Only include document files
             const ext = name.toLowerCase();
-            if (ext.endsWith('.docx') || ext.endsWith('.doc') || ext.endsWith('.txt') || ext.endsWith('.md') || ext.endsWith('.pdf')) {
+            if (ext.endsWith('.docx') || ext.endsWith('.doc') || ext.endsWith('.txt') || ext.endsWith('.md') || ext.endsWith('.pdf') || ext.endsWith('.xlsx') || ext.endsWith('.xls')) {
                 items.push({
                     name,
                     path: itemPath,
@@ -156,6 +156,8 @@ export default function FileExplorer({ onClose }: FileExplorerProps) {
                         accept: {
                             'text/plain': ['.txt', '.md'],
                             'application/vnd.openxmlformats-officedocument.wordprocessingml.document': ['.docx'],
+                            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': ['.xlsx'],
+                            'application/vnd.ms-excel': ['.xls'],
                             'application/pdf': ['.pdf']
                         }
                     }

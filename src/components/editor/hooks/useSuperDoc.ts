@@ -26,7 +26,7 @@ export function useSuperDoc(
                 selector: containerRef.current,
                 toolbar: `#${toolbarId}`,
                 document: file,
-                documentMode: 'editing',
+                documentMode: 'suggesting',
                 user: {
                     name: 'User',
                     email: 'user@example.com',

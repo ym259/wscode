@@ -12,6 +12,7 @@ export const escapeHtml = (text: string): string => {
 
 // Helper to recursively find a file by path in workspace
 export const findFileHandle = (items: FileSystemItem[], targetPath: string): FileSystemFileHandle | null => {
+    if (!targetPath) return null;
     const parts = targetPath.split('/');
 
     const search = (currentItems: FileSystemItem[], pathIndex: number): FileSystemFileHandle | null => {

@@ -1,15 +1,26 @@
+/**
+ * AI Tool definitions aggregator
+ * @module components/editor/utils/ai-tools
+ */
+
 import { SuperDoc } from '@harbour-enterprises/superdoc';
 import { AIActions } from '@superdoc-dev/ai';
 import { FileSystemItem } from '@/types';
-import { ToolDefinition, ToolContext } from './tools/types';
-import { getContentTools } from './tools/content';
-import { getFormattingTools } from './tools/formatting';
-import { getNavigationTools } from './tools/navigation';
-import { getBlockTools } from './tools/block';
+import {
+    ToolDefinition,
+    ToolContext,
+    getContentTools,
+    getFormattingTools,
+    getNavigationTools,
+    getBlockTools
+} from '@/tools';
 
 // Re-export ToolDefinition for consumers
 export type { ToolDefinition };
 
+/**
+ * Build all tool definitions with the given context
+ */
 export const getToolDefinitions = (
     actions: AIActions,
     superdoc: SuperDoc,

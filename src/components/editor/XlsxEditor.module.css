@@ -1,0 +1,116 @@
+.wrapper {
+    position: relative;
+    height: 100%;
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    background: var(--bg-editor);
+}
+
+.container {
+    flex: 1;
+    width: 100%;
+    height: 100%;
+    opacity: 0;
+    transition: opacity var(--transition-normal);
+}
+
+.container.ready {
+    opacity: 1;
+}
+
+.loadingOverlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: var(--spacing-md);
+    background: var(--bg-editor);
+    color: var(--text-secondary);
+    z-index: 10;
+}
+
+.spinner {
+    width: 32px;
+    height: 32px;
+    border: 3px solid var(--border-color);
+    border-top-color: var(--accent-primary);
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+.error {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    gap: var(--spacing-sm);
+    padding: var(--spacing-xl);
+    text-align: center;
+    color: var(--accent-warning);
+}
+
+.hint {
+    color: var(--text-secondary);
+    font-size: var(--font-size-sm);
+}
+
+/* Fortune-sheet container needs explicit height */
+.sheetContainer {
+    width: 100%;
+    height: 100%;
+}
+
+/* Fortune-sheet overrides for dark theme */
+:global(.fortune-sheet-container) {
+    background: var(--bg-secondary) !important;
+}
+
+:global(.fortune-sheet-cell-area) {
+    background: #ffffff !important;
+}
+
+:global(.luckysheet-wa-editor),
+:global(.fortune-sheet-toolbar) {
+    background: var(--bg-sidebar) !important;
+    border-color: var(--border-color) !important;
+}
+
+:global(.fortune-sheet-toolbar button),
+:global(.fortune-sheet-toolbar .toolbar-button) {
+    color: var(--text-bright) !important;
+}
+
+:global(.fortune-sheet-toolbar button:hover),
+:global(.fortune-sheet-toolbar .toolbar-button:hover) {
+    background: var(--bg-hover) !important;
+}
+
+:global(.fortune-sheet-sheet-area) {
+    background: var(--bg-sidebar) !important;
+    border-top: 1px solid var(--border-color) !important;
+}
+
+:global(.fortune-sheet-sheet-area .fortune-sheet-sheet-tab) {
+    background: var(--bg-secondary) !important;
+    color: var(--text-secondary) !important;
+    border-color: var(--border-color) !important;
+}
+
+:global(.fortune-sheet-sheet-area .fortune-sheet-sheet-tab.active),
+:global(.fortune-sheet-sheet-area .fortune-sheet-sheet-tab:hover) {
+    background: var(--bg-hover) !important;
+    color: var(--text-bright) !important;
+}

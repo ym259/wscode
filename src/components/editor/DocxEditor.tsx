@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useRef } from 'react';
+import React, { useRef, useEffect, useCallback } from 'react';
 import '@harbour-enterprises/superdoc/style.css';
 import styles from './DocEditor.module.css';
 import { TrackChangesToolbar } from './TrackChangesToolbar';
@@ -16,7 +16,7 @@ interface DocxEditorProps {
 }
 
 export default function DocxEditor({ file, fileName, handle }: DocxEditorProps) {
-    const { setAIActionHandler, rootItems } = useWorkspace();
+    const { setAIActionHandler, rootItems, setAttachedSelection } = useWorkspace();
     const containerRef = useRef<HTMLDivElement>(null);
 
     // Initialize formatting and editor core
@@ -28,6 +28,58 @@ export default function DocxEditor({ file, fileName, handle }: DocxEditorProps) 
     // Initialize AI capabilities with workspace file access
     useAiAssistant(superdocRef, isReady, setAIActionHandler, rootItems, fileName);
 
+    // Handle Cmd+E to attach selection to chat
+    const handleKeyDown = useCallback((e: KeyboardEvent) => {
+        // Cmd+E (Mac) or Ctrl+E (Windows/Linux)
+        if ((e.metaKey || e.ctrlKey) && e.key === 'e') {
+            e.preventDefault();
+            e.stopPropagation();
+
+            console.log('[DocxEditor] Cmd+E pressed');
+
+            // Get the editor from SuperDoc (same pattern as useAiAssistant.ts)
+            const superdoc = superdocRef.current as any;
+            const editor = superdoc?.activeEditor || superdoc?.editor || superdoc?.getEditor?.() || superdoc?._editor;
+
+            if (!editor?.state?.selection) {
+                console.log('[DocxEditor] No editor found');
+                return;
+            }
+
+            const { from, to } = editor.state.selection;
+
+            console.log('[DocxEditor] Selection range:', from, to);
+
+            // Only attach if there's a selection (not just a cursor)
+            if (from === to) {
+                console.log('[DocxEditor] No selection (cursor only)');
+                return;
+            }
+
+            // Get selected text
+            const selectedText = editor.state.doc.textBetween(from, to, ' ');
+            console.log('[DocxEditor] Selected text:', selectedText);
+
+            if (selectedText.trim()) {
+                setAttachedSelection({
+                    text: selectedText,
+                    fileName: fileName,
+                });
+                console.log('[DocxEditor] Selection attached!');
+            }
+        }
+    }, [superdocRef, fileName, setAttachedSelection]);
+
+    // Add keyboard listener with capture phase to intercept before editor
+    useEffect(() => {
+        if (!isReady) return;
+
+        // Use capture phase to get the event before the editor does
+        document.addEventListener('keydown', handleKeyDown, true);
+        return () => {
+            document.removeEventListener('keydown', handleKeyDown, true);
+        };
+    }, [isReady, handleKeyDown]);
 
     // Unified error handling
     const error = docError || saveError;

@@ -3,6 +3,7 @@
 import React from 'react';
 import DocxEditor from './DocxEditor';
 import PdfViewer from './PdfViewer';
+import XlsxEditor from './XlsxEditor';
 import styles from './DocEditor.module.css';
 
 interface DocEditorProps {
@@ -14,6 +15,7 @@ interface DocEditorProps {
 export default function DocEditor({ file, fileName, handle }: DocEditorProps) {
     const isDocx = fileName.toLowerCase().endsWith('.docx');
     const isPdf = fileName.toLowerCase().endsWith('.pdf');
+    const isXlsx = fileName.toLowerCase().endsWith('.xlsx');
 
     if (isDocx) {
         return <DocxEditor file={file} fileName={fileName} handle={handle} />;
@@ -23,10 +25,14 @@ export default function DocEditor({ file, fileName, handle }: DocEditorProps) {
         return <PdfViewer file={file} />;
     }
 
+    if (isXlsx) {
+        return <XlsxEditor file={file} fileName={fileName} handle={handle} />;
+    }
+
     return (
         <div className={styles.error}>
             <p>File type not supported.</p>
-            <p className={styles.hint}>Supported formats: .docx, .pdf</p>
+            <p className={styles.hint}>Supported formats: .docx, .pdf, .xlsx</p>
         </div>
     );
 }

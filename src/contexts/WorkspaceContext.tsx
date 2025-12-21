@@ -1,69 +1,9 @@
 'use client';
 
 import React, { createContext, useContext, useState, useCallback, ReactNode, useEffect } from 'react';
-import { FileSystemItem, EditorTab, ChatMessage, WorkspaceState } from '@/types';
-
+import { FileSystemItem, EditorTab, ChatMessage, WorkspaceState, AttachedSelection } from '@/types';
 import { ToolCall, AgentEvent } from '@/types';
-
-// --- IndexedDB Helpers ---
-const DB_NAME = 'EditorDB';
-const STORE_NAME = 'handles';
-const ROOT_ITEMS_KEY = 'root_items_handles';
-const OPEN_TABS_KEY = 'open_tabs';
-const ACTIVE_TAB_ID_KEY = 'active_tab_id';
-
-const initDB = (): Promise<IDBDatabase> => {
-    if (typeof window === 'undefined' || !('indexedDB' in window)) {
-        return Promise.reject(new Error('IndexedDB not supported'));
-    }
-    return new Promise((resolve, reject) => {
-        const request = indexedDB.open(DB_NAME, 1);
-        request.onupgradeneeded = (event) => {
-            const db = (event.target as IDBOpenDBRequest).result;
-            if (!db.objectStoreNames.contains(STORE_NAME)) {
-                db.createObjectStore(STORE_NAME);
-            }
-        };
-        request.onsuccess = () => resolve(request.result);
-        request.onerror = () => reject(request.error);
-    });
-};
-
-const saveToDB = async (key: string, value: any) => {
-    try {
-        const db = await initDB();
-        return new Promise<void>((resolve, reject) => {
-            const tx = db.transaction(STORE_NAME, 'readwrite');
-            const store = tx.objectStore(STORE_NAME);
-            if (value !== null && value !== undefined) {
-                store.put(value, key);
-            } else {
-                store.delete(key);
-            }
-            tx.oncomplete = () => resolve();
-            tx.onerror = () => reject(tx.error);
-        });
-    } catch (e) {
-        console.error('Failed to save to IDB:', e);
-    }
-};
-
-const getFromDB = async (key: string): Promise<any> => {
-    try {
-        const db = await initDB();
-        return new Promise((resolve, reject) => {
-            const tx = db.transaction(STORE_NAME, 'readonly');
-            const store = tx.objectStore(STORE_NAME);
-            const request = store.get(key);
-            request.onsuccess = () => resolve(request.result);
-            request.onerror = () => reject(request.error);
-        });
-    } catch (e) {
-        console.error('Failed to get from IDB:', e);
-        return undefined;
-    }
-};
-// -------------------------
+import { saveToDB, getFromDB, STORAGE_KEYS } from '@/lib/indexeddb';
 
 // Type for the AI action handler function
 export type AIActionHandler = (
@@ -85,6 +25,10 @@ interface WorkspaceContextType extends WorkspaceState {
     // AI Action integration
     aiActionHandler: AIActionHandler | null;
     setAIActionHandler: (handler: AIActionHandler | null) => void;
+    // Selection attach (Cmd+I)
+    attachedSelection: AttachedSelection | null;
+    setAttachedSelection: (selection: AttachedSelection | null) => void;
+    clearAttachedSelection: () => void;
 }
 
 const WorkspaceContext = createContext<WorkspaceContextType | null>(null);
@@ -96,12 +40,13 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     const [agentMessages, setAgentMessages] = useState<ChatMessage[]>([]);
     const [isPanelOpen, setIsPanelOpen] = useState(true);
     const [aiActionHandler, setAIActionHandler] = useState<AIActionHandler | null>(null);
+    const [attachedSelection, setAttachedSelectionState] = useState<AttachedSelection | null>(null);
 
     // Load workspace state from IDB on mount
     useEffect(() => {
         const restoreWorkspace = async () => {
             // Restore Root Items
-            const handles = await getFromDB(ROOT_ITEMS_KEY) as FileSystemHandle[] | undefined;
+            const handles = await getFromDB(STORAGE_KEYS.ROOT_ITEMS) as FileSystemHandle[] | undefined;
             if (handles && Array.isArray(handles)) {
                 const items: FileSystemItem[] = handles.map(h => ({
                     name: h.name,
@@ -114,7 +59,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
             }
 
             // Restore Tabs
-            const storedTabs = await getFromDB(OPEN_TABS_KEY) as EditorTab[] | undefined;
+            const storedTabs = await getFromDB(STORAGE_KEYS.OPEN_TABS) as EditorTab[] | undefined;
             if (storedTabs && storedTabs.length > 0) {
                 // We just restore the metadata. The useEffect below will handle
                 // getting the actual File objects once permissions are granted.
@@ -122,7 +67,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
             }
 
             // Restore Active Tab Id
-            const storedActiveTabId = await getFromDB(ACTIVE_TAB_ID_KEY);
+            const storedActiveTabId = await getFromDB<string>(STORAGE_KEYS.ACTIVE_TAB_ID);
             if (storedActiveTabId) {
                 setActiveTabId(storedActiveTabId);
             }
@@ -155,7 +100,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
 
             if (changed) {
                 setOpenTabs(updatedTabs);
-                saveToDB(OPEN_TABS_KEY, updatedTabs);
+                saveToDB(STORAGE_KEYS.OPEN_TABS, updatedTabs);
             }
         };
 
@@ -166,7 +111,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         setRootItemsState(items);
         // Persist handles
         const handles = items.map(item => item.handle);
-        saveToDB(ROOT_ITEMS_KEY, handles);
+        saveToDB(STORAGE_KEYS.ROOT_ITEMS, handles);
     }, []);
 
     const addWorkspaceItem = useCallback((item: FileSystemItem) => {
@@ -174,7 +119,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
             // Avoid duplicates by path
             if (prev.find(i => i.path === item.path)) return prev;
             const next = [...prev, item];
-            saveToDB(ROOT_ITEMS_KEY, next.map(i => i.handle));
+            saveToDB(STORAGE_KEYS.ROOT_ITEMS, next.map(i => i.handle));
             return next;
         });
     }, []);
@@ -182,7 +127,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     const removeWorkspaceItem = useCallback((path: string) => {
         setRootItemsState((prev) => {
             const next = prev.filter(i => i.path !== path);
-            saveToDB(ROOT_ITEMS_KEY, next.map(i => i.handle));
+            saveToDB(STORAGE_KEYS.ROOT_ITEMS, next.map(i => i.handle));
             return next;
         });
     }, []);
@@ -192,7 +137,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         const existingTab = openTabs.find((tab) => tab.path === item.path);
         if (existingTab) {
             setActiveTabId(existingTab.id);
-            saveToDB(ACTIVE_TAB_ID_KEY, existingTab.id);
+            saveToDB(STORAGE_KEYS.ACTIVE_TAB_ID, existingTab.id);
             return;
         }
 
@@ -208,17 +153,17 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
 
         setOpenTabs((prev) => {
             const next = [...prev, newTab];
-            saveToDB(OPEN_TABS_KEY, next);
+            saveToDB(STORAGE_KEYS.OPEN_TABS, next);
             return next;
         });
         setActiveTabId(newTab.id);
-        saveToDB(ACTIVE_TAB_ID_KEY, newTab.id);
+        saveToDB(STORAGE_KEYS.ACTIVE_TAB_ID, newTab.id);
     }, [openTabs]);
 
     const closeTab = useCallback((tabId: string) => {
         setOpenTabs((prev) => {
             const newTabs = prev.filter((tab) => tab.id !== tabId);
-            saveToDB(OPEN_TABS_KEY, newTabs);
+            saveToDB(STORAGE_KEYS.OPEN_TABS, newTabs);
 
             // If closing active tab, switch to another tab
             if (activeTabId === tabId && newTabs.length > 0) {
@@ -226,10 +171,10 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
                 const newActiveIndex = Math.min(closedIndex, newTabs.length - 1);
                 const nextActiveId = newTabs[newActiveIndex].id;
                 setActiveTabId(nextActiveId);
-                saveToDB(ACTIVE_TAB_ID_KEY, nextActiveId);
+                saveToDB(STORAGE_KEYS.ACTIVE_TAB_ID, nextActiveId);
             } else if (newTabs.length === 0) {
                 setActiveTabId(null);
-                saveToDB(ACTIVE_TAB_ID_KEY, null);
+                saveToDB(STORAGE_KEYS.ACTIVE_TAB_ID, null);
             }
 
             return newTabs;
@@ -238,7 +183,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
 
     const setActiveTab = useCallback((tabId: string) => {
         setActiveTabId(tabId);
-        saveToDB(ACTIVE_TAB_ID_KEY, tabId);
+        saveToDB(STORAGE_KEYS.ACTIVE_TAB_ID, tabId);
     }, []);
 
     const addMessage = useCallback((message: Omit<ChatMessage, 'id' | 'timestamp'>) => {
@@ -265,6 +210,18 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         setAIActionHandler(() => handler);
     }, []);
 
+    const setAttachedSelection = useCallback((selection: AttachedSelection | null) => {
+        setAttachedSelectionState(selection);
+        // Open panel when attaching a selection
+        if (selection) {
+            setIsPanelOpen(true);
+        }
+    }, []);
+
+    const clearAttachedSelection = useCallback(() => {
+        setAttachedSelectionState(null);
+    }, []);
+
     return (
         <WorkspaceContext.Provider
             value={{
@@ -284,6 +241,9 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
                 togglePanel,
                 aiActionHandler,
                 setAIActionHandler: setAIActionHandlerSafe,
+                attachedSelection,
+                setAttachedSelection,
+                clearAttachedSelection,
             }}
         >
             {children}

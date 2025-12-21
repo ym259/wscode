@@ -78,11 +78,71 @@ export function useAiAssistant(
 
             console.log('[DocEditor] handleAiAction called.');
 
+            // Build dynamic context about active document with statistics
+            let activeDocContext = '';
+            if (activeFilePath && superdocRef.current) {
+                const sd = superdocRef.current as any;
+                const editor = sd.activeEditor || sd.editor || sd.getEditor?.() || sd._editor;
+
+                // Get document statistics
+                let charCount = 0;
+                let blockCount = 0;
+                const CHARS_PER_PAGE = 3000; // Approximate chars per page
+
+                try {
+                    // Get character count from document text content
+                    if (editor?.state?.doc) {
+                        charCount = editor.state.doc.textContent?.length || 0;
+                    }
+
+                    // Get block count
+                    if (editor?.helpers?.blockNode?.getBlockNodes) {
+                        const blocks = editor.helpers.blockNode.getBlockNodes();
+                        blockCount = blocks.length;
+                    }
+                } catch (e) {
+                    console.warn('[useAiAssistant] Error getting doc stats:', e);
+                }
+
+                const estimatedPages = Math.ceil(charCount / CHARS_PER_PAGE) || 1;
+                const isLargeDoc = estimatedPages > 5;
+
+                activeDocContext = `\n\n# Current Context
+Document: "${activeFilePath}"
+- Character count: ${charCount.toLocaleString()}
+- Estimated pages: ${estimatedPages}
+- Block count: ${blockCount}
+
+${isLargeDoc
+                        ? `**Strategy Hint**: This is a large document (>${estimatedPages} pages). Use \`searchDocument\` to find specific content first, then \`readDocument({ startIndex, endIndex })\` to read around matches. Avoid reading the entire document at once.`
+                        : `**Strategy Hint**: This is a small document (≤5 pages). You can use \`readDocument()\` to read the full content for comprehensive understanding.`
+                    }
+
+When the user refers to "this document", "the document", or makes requests without specifying a file, they mean this active document.`;
+            }
+
             const messages: any[] = [
                 {
                     type: 'message',
                     role: 'system',
-                    content: `You are an intelligent professional document editor agent. Edit documents safely while preserving structure and formatting.
+                    content: `You are an intelligent professional document editor agent. Edit documents safely while preserving structure and formatting.${activeDocContext}
+
+# Tool Selection Strategy
+
+## When to use \`searchDocument\` (faster, more efficient):
+- Finding and replacing specific text or phrases
+- Locating where a term, clause, or keyword appears
+- Quick lookups without needing full document understanding
+- Checking if specific content exists in the document
+
+## When to use \`readDocument\` (comprehensive understanding):
+- Rephrasing, rewriting, or summarizing sections
+- Understanding document structure or context
+- Deleting or moving blocks (requires \`sdBlockId\`)
+- Making changes that depend on surrounding content
+- First-time document exploration
+
+**Default behavior**: For targeted edits (replace X with Y), prefer \`searchDocument\` first. For broader edits (rewrite, summarize, restructure), use \`readDocument\`.
 
 # Critical Rules
 
@@ -100,8 +160,12 @@ export function useAiAssistant(
 ## Tables
 - Use \`afterText\` parameter to anchor table placement
 
-## Reading
-- Use \`readDocument()\` for structure
+## Reading & Large Document Strategy
+- For small documents (≤5 pages): Use \`readDocument()\` for full content
+- For large documents (>5 pages):
+  1. Use \`searchDocument\` to find relevant sections first
+  2. Use \`readDocument({ startIndex, endIndex })\` to read around search results
+  3. Each block is roughly a paragraph/heading/list item (~100-200 chars)
 - Use \`readDocument({ includeStyles: true })\` for style validation
 
 # Constraints
