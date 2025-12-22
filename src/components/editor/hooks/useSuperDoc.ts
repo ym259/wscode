@@ -47,5 +47,34 @@ export function useSuperDoc(
         };
     }, [file, fileName, toolbarId, containerRef]);
 
+    // Suppress known SuperDoc internal errors that we can't fix
+    useEffect(() => {
+        const handleUnhandledRejection = (event: PromiseRejectionEvent) => {
+            // Check if it's the known SuperDoc 'height' error
+            if (event.reason?.message?.includes('height') ||
+                event.reason?.toString?.()?.includes("reading 'height'")) {
+                console.debug('[DocxEditor] Suppressing known SuperDoc internal error:', event.reason?.message || event.reason);
+                event.preventDefault(); // Prevent error from appearing in console
+            }
+        };
+
+        const handleError = (event: ErrorEvent) => {
+            // Check if it's the known SuperDoc 'height' error
+            if (event.message?.includes('height') ||
+                event.message?.includes("reading 'height'")) {
+                console.debug('[DocxEditor] Suppressing known SuperDoc internal error:', event.message);
+                event.preventDefault();
+            }
+        };
+
+        window.addEventListener('unhandledrejection', handleUnhandledRejection);
+        window.addEventListener('error', handleError);
+
+        return () => {
+            window.removeEventListener('unhandledrejection', handleUnhandledRejection);
+            window.removeEventListener('error', handleError);
+        };
+    }, []);
+
     return { superdocRef, isReady, error, toolbarId };
 }

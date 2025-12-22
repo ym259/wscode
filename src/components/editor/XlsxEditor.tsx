@@ -6,8 +6,9 @@ import '@fortune-sheet/react/dist/index.css';
 import styles from './XlsxEditor.module.css';
 import { useFortuneSheet } from './hooks/useFortuneSheet';
 import { useXlsxFileHandler } from './hooks/useXlsxFileHandler';
-import { useXlsxAiAssistant } from './hooks/useXlsxAiAssistant';
+import { useUniversalAgent } from './hooks/useUniversalAgent';
 import { useWorkspace } from '@/contexts/WorkspaceContext';
+import { FileSystemItem } from '@/types';
 
 interface XlsxEditorProps {
     file: File;
@@ -16,7 +17,7 @@ interface XlsxEditorProps {
 }
 
 export default function XlsxEditor({ file, fileName, handle }: XlsxEditorProps) {
-    const { setAIActionHandler, rootItems } = useWorkspace();
+    const { setAIActionHandler, rootItems, openFile } = useWorkspace();
 
     // Parse xlsx and manage sheet state
     const { sheets, isReady, error: parseError, workbookRef } = useFortuneSheet(file);
@@ -77,8 +78,67 @@ export default function XlsxEditor({ file, fileName, handle }: XlsxEditorProps) 
         }
     }, []);
 
-    // Enable AI Assistant for XLSX with live cell update capability
-    useXlsxAiAssistant(isReady, setAIActionHandler, rootItems, fileName, handle, setCellValueViaRef);
+    // Helper to find file by path and open it
+    const openFileByPath = useCallback(async (path: string): Promise<boolean> => {
+        // Normalize path for comparison
+        const normalize = (p: string) => p.toLowerCase().replace(/\\/g, '/');
+        const targetNorm = normalize(path);
+
+        // Recursively search for file in workspace with flexible matching
+        const findItem = (items: FileSystemItem[], parentPath: string = ''): FileSystemItem | null => {
+            for (const item of items) {
+                const fullPath = parentPath ? `${parentPath}/${item.name}` : item.name;
+                const fullPathNorm = normalize(fullPath);
+                const itemNameNorm = normalize(item.name);
+
+                // Match: exact path, just filename, or path ending
+                if (
+                    fullPathNorm === targetNorm ||
+                    itemNameNorm === targetNorm ||
+                    fullPathNorm.endsWith('/' + targetNorm) ||
+                    targetNorm.endsWith('/' + fullPathNorm) ||
+                    // Match without directory prefix
+                    itemNameNorm === normalize(path.split('/').pop() || path)
+                ) {
+                    if (item.type === 'file') return item;
+                }
+
+                if (item.children) {
+                    const found = findItem(item.children, fullPath);
+                    if (found) return found;
+                }
+            }
+            return null;
+        };
+
+        const item = findItem(rootItems);
+        if (!item || !item.handle) {
+            console.warn('[XlsxEditor] File not found:', path);
+            return false;
+        }
+
+        try {
+            const fileHandle = item.handle as FileSystemFileHandle;
+            const fileData = await fileHandle.getFile();
+            openFile(item, fileData);
+            return true;
+        } catch (err) {
+            console.error('[XlsxEditor] Error opening file:', err);
+            return false;
+        }
+    }, [rootItems, openFile]);
+
+    // Enable AI Assistant with unified agent
+    useUniversalAgent({
+        isReady,
+        activeFilePath: fileName,
+        activeFileType: 'xlsx',
+        activeFileHandle: handle,
+        workspaceFiles: rootItems,
+        setAIActionHandler,
+        setCellValue: setCellValueViaRef,
+        openFileInEditor: openFileByPath
+    });
 
     // Track latest sheet data for saving
     const latestSheetsRef = React.useRef(sheets);

@@ -12,7 +12,8 @@ import {
     getContentTools,
     getFormattingTools,
     getNavigationTools,
-    getBlockTools
+    getBlockTools,
+    getSpreadsheetTools
 } from '@/tools';
 
 // Re-export ToolDefinition for consumers
@@ -48,6 +49,7 @@ export const getToolDefinitions = (
         ...getContentTools(context),
         ...getFormattingTools(context),
         ...getNavigationTools(context),
-        ...getBlockTools(context)
+        ...getBlockTools(context),
+        ...getSpreadsheetTools(context)
     ];
 };

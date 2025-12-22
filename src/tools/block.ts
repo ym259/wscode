@@ -1,5 +1,42 @@
 import { ToolDefinition, createTool, ToolContext } from './types';
 
+/**
+ * Extract text content from a node, excluding text that has deletion marks (track changes).
+ * This ensures readDocument shows the current state of the document, not the deleted text.
+ */
+/**
+ * Extract text content from a node.
+ * @param node The node to extract text from
+ * @param includeDeletions If true, includes deleted text wrapped in ~~markers~~
+ */
+const getTextContent = (node: any, includeDeletions: boolean = false): string => {
+    let text = '';
+
+    node.descendants((child: any) => {
+        if (child.isText) {
+            // Check if this text node has a deletion mark
+            const hasDeletionMark = child.marks?.some((mark: any) => {
+                const markName = mark.type.name.toLowerCase();
+                // SuperDoc uses marks like 'trackChangesDeletion' or similar patterns
+                return markName.includes('deletion') ||
+                    markName.includes('delete') ||
+                    (markName.includes('trackchange') && mark.attrs?.type === 'deletion');
+            });
+
+            if (hasDeletionMark) {
+                if (includeDeletions) {
+                    text += `~~${child.text}~~`;
+                }
+            } else {
+                text += child.text || '';
+            }
+        }
+        return true; // Continue traversing
+    });
+
+    return text;
+};
+
 export const getBlockTools = (context: ToolContext): ToolDefinition[] => {
     const { getEditor } = context;
 
@@ -14,6 +51,10 @@ export const getBlockTools = (context: ToolContext): ToolDefinition[] => {
                         type: 'boolean',
                         description: 'Whether to include block and inline style information (default: false)'
                     },
+                    includeDeletions: {
+                        type: 'boolean',
+                        description: 'Whether to include text marked as deleted (Track Changes), wrapped in ~~markers~~ (default: false)'
+                    },
                     startIndex: {
                         type: 'integer',
                         description: 'Starting block index (0-indexed, default: 0). Use this with endIndex to read a specific range.'
@@ -26,7 +67,7 @@ export const getBlockTools = (context: ToolContext): ToolDefinition[] => {
                 required: [],
                 additionalProperties: false
             },
-            async ({ includeStyles = false, startIndex, endIndex }: { includeStyles?: boolean; startIndex?: number; endIndex?: number }) => {
+            async ({ includeStyles = false, includeDeletions = false, startIndex, endIndex }: { includeStyles?: boolean; includeDeletions?: boolean; startIndex?: number; endIndex?: number }) => {
                 const editor = getEditor();
                 if (!editor) throw new Error('Editor not initialized');
 
@@ -78,9 +119,8 @@ export const getBlockTools = (context: ToolContext): ToolDefinition[] => {
                 blocks.forEach((b: any, idx: number) => {
                     const absoluteIndex = start + idx;
                     const type = b.node.type.name;
-                    // Truncate long content for readability unless needed
-                    const text = b.node.textContent || '(empty)';
-                    const truncatedText = text.length > 100 ? text.substring(0, 100) + '...' : text;
+                    // Use helper to exclude deleted text (track changes)
+                    const text = getTextContent(b.node, includeDeletions) || '(empty)';
                     const id = b.node.attrs.sdBlockId || 'no-id';
 
                     // Add listLevel info for ordered lists (SuperDoc uses listLevel array for visual numbering)
@@ -95,7 +135,7 @@ export const getBlockTools = (context: ToolContext): ToolDefinition[] => {
                         if (parts.length > 0) orderInfo = ` [${parts.join(', ')}]`;
                     }
 
-                    result += `[#${absoluteIndex}][ID: ${id}] (${type})${orderInfo} ${truncatedText}\n`;
+                    result += `[#${absoluteIndex}][ID: ${id}] (${type})${orderInfo} ${text}\n`;
 
                     if (includeStyles) {
                         result += '  Styles:';
@@ -141,12 +181,13 @@ export const getBlockTools = (context: ToolContext): ToolDefinition[] => {
             {
                 type: 'object',
                 properties: {
-                    blockId: { type: 'string', description: 'The sdBlockId of the block to delete.' }
+                    blockId: { type: 'string', description: 'The sdBlockId of the block to delete.' },
+                    trackChanges: { type: 'boolean', description: 'Whether to track this deletion as a suggestion.' }
                 },
                 required: ['blockId'],
                 additionalProperties: false
             },
-            async ({ blockId }: { blockId: string }) => {
+            async ({ blockId, trackChanges }: { blockId: string, trackChanges?: boolean }) => {
                 const editor = getEditor();
                 if (!editor) throw new Error('Editor not initialized');
 
@@ -154,8 +195,18 @@ export const getBlockTools = (context: ToolContext): ToolDefinition[] => {
                     return 'Error: `deleteBlockNodeById` command not available.';
                 }
 
+                // Handle track changes mode
+                const { superdoc } = context;
+                if (superdoc?.setDocumentMode) {
+                    if (trackChanges === true) {
+                        superdoc.setDocumentMode('suggesting');
+                    } else if (trackChanges === false) {
+                        superdoc.setDocumentMode('editing');
+                    }
+                }
+
                 editor.commands.deleteBlockNodeById(blockId);
-                return `Deleted block with ID: ${blockId}`;
+                return `Deleted block with ID: ${blockId}${trackChanges ? ' (tracked)' : ''}`;
             }
         ),
         createTool(
@@ -328,7 +379,8 @@ export const getBlockTools = (context: ToolContext): ToolDefinition[] => {
                     const type = b.node.type.name;
                     const pos = b.pos;
                     const endPos = pos + b.node.nodeSize;
-                    const text = (b.node.textContent || '').substring(0, 50);
+                    // Use helper to exclude deleted text (track changes)
+                    const text = (getTextContent(b.node, false) || '').substring(0, 50);
                     const attrs = b.node.attrs || {};
 
                     // Format attributes nicely

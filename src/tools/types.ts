@@ -32,4 +32,6 @@ export interface ToolContext {
     superdoc?: any;
     /** Callback for live cell updates in spreadsheets */
     setCellValue?: (cell: string, value: string | number, sheetName?: string, isNumber?: boolean) => void;
+    /** Callback to open a file in the editor (switches active file) */
+    openFileInEditor?: (path: string) => Promise<boolean>;
 }

@@ -106,18 +106,23 @@ export const getNavigationTools = (context: ToolContext): ToolDefinition[] => {
         ),
         createTool(
             'readFile',
-            'Read the content of a file from the workspace by its path. Use this to access files mentioned by the user with @. If path is omitted, reads the active file. For large documents, content is paginated.',
+            'Read the content of a file from the workspace by its path. Use this to access files mentioned by the user with @. If path is omitted, reads the active file. For xlsx files, defaults to first sheet only - use sheets parameter to read specific sheet(s). For large documents, content is paginated.',
             {
                 type: 'object',
                 properties: {
                     path: { type: 'string', description: 'The file path as shown in the workspace. Optional if a file is currently open.' },
+                    sheets: {
+                        type: 'array',
+                        items: { type: 'string' },
+                        description: 'For xlsx files: sheet name(s) to read. Defaults to first sheet only. Use listSpreadsheetSheets to see available sheets.'
+                    },
                     startPage: { type: 'integer', description: 'Starting page number (1-indexed, default: 1)' },
                     endPage: { type: 'integer', description: 'Ending page number (inclusive, default: 5). Max 5 pages per request.' }
                 },
                 required: [],
                 additionalProperties: false
             },
-            async ({ path, startPage, endPage }: { path?: string, startPage?: number, endPage?: number }) => {
+            async ({ path, sheets, startPage, endPage }: { path?: string, sheets?: string[], startPage?: number, endPage?: number }) => {
                 const CHARS_PER_PAGE = 3000;
                 const MAX_PAGES_PER_REQUEST = 5;
                 const DEFAULT_END_PAGE = 5;
@@ -214,9 +219,19 @@ export const getNavigationTools = (context: ToolContext): ToolDefinition[] => {
                             const MAX_ROWS = 200;
                             const MAX_COLS = 50;
 
-                            // Convert each sheet to readable text
+                            // Determine which sheets to read
+                            // If sheets param provided, use those; otherwise default to first sheet only
+                            const sheetsToRead = sheets && sheets.length > 0
+                                ? sheets.filter(s => workbook.SheetNames.includes(s))
+                                : [workbook.SheetNames[0]];
+
+                            if (sheets && sheets.length > 0 && sheetsToRead.length === 0) {
+                                return `Error: None of the specified sheets (${sheets.join(', ')}) were found. Available sheets: ${workbook.SheetNames.join(', ')}`;
+                            }
+
+                            // Convert selected sheets to readable text
                             const sheetsContent: string[] = [];
-                            for (const sheetName of workbook.SheetNames) {
+                            for (const sheetName of sheetsToRead) {
                                 const worksheet = workbook.Sheets[sheetName];
 
                                 // Get the actual range of data
@@ -267,9 +282,16 @@ export const getNavigationTools = (context: ToolContext): ToolDefinition[] => {
                                     sheetsContent.push(`${sheetHeader}\n\n${trimmedCsv}`);
                                 }
                             }
+
+                            // Add note about other available sheets if only reading subset
+                            const otherSheets = workbook.SheetNames.filter(s => !sheetsToRead.includes(s));
                             content = sheetsContent.length > 0
                                 ? sheetsContent.join('\n\n---\n\n')
                                 : '[Empty spreadsheet - no data found]';
+
+                            if (otherSheets.length > 0) {
+                                content += `\n\n---\n[Other available sheets: ${otherSheets.join(', ')}. Use sheets parameter to read them.]`;
+                            }
                         } catch (xlsxError) {
                             console.error('[readFile] XLSX extraction failed:', xlsxError);
                             content = `[Error extracting xlsx content: ${xlsxError instanceof Error ? xlsxError.message : 'Unknown error'}]`;
@@ -296,6 +318,47 @@ export const getNavigationTools = (context: ToolContext): ToolDefinition[] => {
                     return result;
                 } catch (error) {
                     return `Error reading file: ${error instanceof Error ? error.message : 'Unknown error'}`;
+                }
+            }
+        ),
+
+        createTool(
+            'openFile',
+            'Open a file in the editor, making it the active file. Use this when you need to edit a file that is not currently active. After opening, you will have access to write tools for that file type. IMPORTANT: After calling this, complete your current turn and the new tools will be available in the next turn.',
+            {
+                type: 'object',
+                properties: {
+                    path: {
+                        type: 'string',
+                        description: 'Path to the file to open (as shown in workspace).'
+                    }
+                },
+                required: ['path'],
+                additionalProperties: false
+            },
+            async ({ path }: { path: string }) => {
+                const { openFileInEditor } = context;
+
+                if (!path) {
+                    return 'Error: path is required.';
+                }
+
+                if (!openFileInEditor) {
+                    return 'Error: openFile capability not available. This may be a configuration issue.';
+                }
+
+                try {
+                    const success = await openFileInEditor(path);
+                    if (success) {
+                        const fileType = path.toLowerCase().endsWith('.xlsx') ? 'xlsx'
+                            : path.toLowerCase().endsWith('.docx') ? 'docx'
+                                : 'other';
+                        return `Successfully opened "${path}". The file is now active. ${fileType === 'docx' ? 'DOCX write tools (insertTable, literalReplace, etc.)' : fileType === 'xlsx' ? 'XLSX write tools (editSpreadsheet, insertRow, etc.)' : 'Write tools'} are now available for your next action.`;
+                    } else {
+                        return `Failed to open "${path}". The file may not exist in the workspace.`;
+                    }
+                } catch (error) {
+                    return `Error opening file: ${error instanceof Error ? error.message : 'Unknown error'}`;
                 }
             }
         )

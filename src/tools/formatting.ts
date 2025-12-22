@@ -1,5 +1,19 @@
 import { ToolDefinition, createTool, ToolContext } from './types';
 
+/**
+ * Check if a text node has a deletion mark (track changes).
+ * Used to skip deleted text when searching for content.
+ */
+const hasDeletionMark = (node: any): boolean => {
+    if (!node.marks?.length) return false;
+    return node.marks.some((mark: any) => {
+        const markName = mark.type.name.toLowerCase();
+        return markName.includes('deletion') ||
+            markName.includes('delete') ||
+            (markName.includes('trackchange') && mark.attrs?.type === 'deletion');
+    });
+};
+
 export const getFormattingTools = (context: ToolContext): ToolDefinition[] => {
     const { getEditor, getActionMethods } = context;
 
@@ -148,7 +162,8 @@ export const getFormattingTools = (context: ToolContext): ToolDefinition[] => {
 
                 editor.state.doc.descendants((node: any, pos: number) => {
                     if (foundFrom > -1) return false;
-                    if (node.isText) {
+                    // Skip text nodes with deletion marks (track changes)
+                    if (node.isText && !hasDeletionMark(node)) {
                         const textContent = node.text!;
                         const idx = textContent.indexOf(text);
                         if (idx > -1) {
@@ -204,7 +219,8 @@ export const getFormattingTools = (context: ToolContext): ToolDefinition[] => {
                 const searchText = text.toLowerCase();
 
                 editor.state.doc.descendants((node: any, pos: number) => {
-                    if (node.isText) {
+                    // Skip text nodes with deletion marks (track changes)
+                    if (node.isText && !hasDeletionMark(node)) {
                         const nodeText = node.text!.toLowerCase();
                         let idx = 0;
                         while ((idx = nodeText.indexOf(searchText, idx)) !== -1) {

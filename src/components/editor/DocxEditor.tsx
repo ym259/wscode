@@ -6,8 +6,9 @@ import styles from './DocEditor.module.css';
 import { TrackChangesToolbar } from './TrackChangesToolbar';
 import { useSuperDoc } from './hooks/useSuperDoc';
 import { useFileHandler } from './hooks/useFileHandler';
-import { useAiAssistant } from './hooks/useAiAssistant';
+import { useUniversalAgent } from './hooks/useUniversalAgent';
 import { useWorkspace } from '@/contexts/WorkspaceContext';
+import { FileSystemItem } from '@/types';
 
 interface DocxEditorProps {
     file: File;
@@ -16,7 +17,7 @@ interface DocxEditorProps {
 }
 
 export default function DocxEditor({ file, fileName, handle }: DocxEditorProps) {
-    const { setAIActionHandler, rootItems, setAttachedSelection } = useWorkspace();
+    const { setAIActionHandler, rootItems, setAttachedSelection, openFile } = useWorkspace();
     const containerRef = useRef<HTMLDivElement>(null);
 
     // Initialize formatting and editor core
@@ -25,8 +26,67 @@ export default function DocxEditor({ file, fileName, handle }: DocxEditorProps) 
     // Handle file operations (saving)
     const { saveError } = useFileHandler(superdocRef, handle, fileName);
 
-    // Initialize AI capabilities with workspace file access
-    useAiAssistant(superdocRef, isReady, setAIActionHandler, rootItems, fileName);
+    // Helper to find file by path and open it
+    const openFileByPath = useCallback(async (path: string): Promise<boolean> => {
+        // Normalize path for comparison
+        const normalize = (p: string) => p.toLowerCase().replace(/\\/g, '/');
+        const targetNorm = normalize(path);
+
+        // Recursively search for file in workspace with flexible matching
+        const findItem = (items: FileSystemItem[], parentPath: string = ''): FileSystemItem | null => {
+            for (const item of items) {
+                const fullPath = parentPath ? `${parentPath}/${item.name}` : item.name;
+                const fullPathNorm = normalize(fullPath);
+                const itemNameNorm = normalize(item.name);
+
+                // Match: exact path, just filename, or path ending
+                if (
+                    fullPathNorm === targetNorm ||
+                    itemNameNorm === targetNorm ||
+                    fullPathNorm.endsWith('/' + targetNorm) ||
+                    targetNorm.endsWith('/' + fullPathNorm) ||
+                    // Match without directory prefix
+                    itemNameNorm === normalize(path.split('/').pop() || path)
+                ) {
+                    if (item.type === 'file') return item;
+                }
+
+                if (item.children) {
+                    const found = findItem(item.children, fullPath);
+                    if (found) return found;
+                }
+            }
+            return null;
+        };
+
+        const item = findItem(rootItems);
+        if (!item || !item.handle) {
+            console.warn('[DocxEditor] File not found:', path);
+            return false;
+        }
+
+        try {
+            const fileHandle = item.handle as FileSystemFileHandle;
+            const fileData = await fileHandle.getFile();
+            openFile(item, fileData);
+            return true;
+        } catch (err) {
+            console.error('[DocxEditor] Error opening file:', err);
+            return false;
+        }
+    }, [rootItems, openFile]);
+
+    // Initialize AI capabilities with unified agent
+    useUniversalAgent({
+        superdocRef,
+        isReady,
+        activeFilePath: fileName,
+        activeFileType: 'docx',
+        activeFileHandle: handle,
+        workspaceFiles: rootItems,
+        setAIActionHandler,
+        openFileInEditor: openFileByPath
+    });
 
     // Handle Cmd+E to attach selection to chat
     const handleKeyDown = useCallback((e: KeyboardEvent) => {

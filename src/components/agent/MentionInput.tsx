@@ -141,6 +141,11 @@ export function MentionInput({ value, onChange, onSubmit, disabled, workspaceFil
     }, [attachedSelection, value, onChange, onSubmit, clearAttachedSelection]);
 
     const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+        // Ignore keydown events during IME composition (e.g., Japanese, Chinese, Korean input)
+        if (e.nativeEvent.isComposing) {
+            return;
+        }
+
         // Handle @mention navigation
         if (mentionQuery !== null && filteredFiles.length > 0) {
             if (e.key === 'ArrowDown') {
