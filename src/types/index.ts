@@ -41,6 +41,7 @@ export interface ChatMessage {
     id: string;
     role: 'user' | 'assistant' | 'system';
     content: string;
+    images?: string[]; // Optional array of base64 image strings
     items?: MessageItem[];  // Ordered list of reasoning and tool calls
     // Deprecated: use items instead
     toolCalls?: ToolCall[];

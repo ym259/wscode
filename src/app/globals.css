@@ -228,3 +228,20 @@ a:hover {
   width: 16px;
   height: 16px;
 }
+
+/* CustomDocEditor - Indented paragraphs from DOCX structured content */
+/* These paragraphs come from sdt blocks and need proper list-matching indentation */
+/* Match the nested list indentation */
+.ProseMirror p[data-indent] {
+  margin-left: 3em;
+  margin-top: -6px;
+  /* Compensate for ol/li margin-bottom gap */
+  margin-bottom: 0.25em;
+  /* Match list item spacing */
+}
+
+/* For specific indent values (DOCX uses twentieths of a point) */
+.ProseMirror p[data-indent="900"] {
+  margin-left: 3em;
+  /* Match level 2 nested list indentation (2 x 1.5em) */
+}

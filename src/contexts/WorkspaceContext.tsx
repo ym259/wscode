@@ -9,8 +9,15 @@ import { saveToDB, getFromDB, STORAGE_KEYS } from '@/lib/indexeddb';
 export type AIActionHandler = (
     prompt: string,
     history: ChatMessage[],
-    onUpdate: (event: AgentEvent) => void
+    onUpdate: (event: AgentEvent) => void,
+    images?: string[]
 ) => Promise<void>;
+
+// Type for voice tool handler (executes individual tools by name)
+export type VoiceToolHandler = (
+    toolName: string,
+    args: Record<string, unknown>
+) => Promise<string>;
 
 interface WorkspaceContextType extends WorkspaceState {
     setRootItems: (items: FileSystemItem[]) => void;
@@ -25,6 +32,9 @@ interface WorkspaceContextType extends WorkspaceState {
     // AI Action integration
     aiActionHandler: AIActionHandler | null;
     setAIActionHandler: (handler: AIActionHandler | null) => void;
+    // Voice tool handler (for realtime voice agent)
+    voiceToolHandler: VoiceToolHandler | null;
+    setVoiceToolHandler: (handler: VoiceToolHandler | null) => void;
     // Selection attach (Cmd+I)
     attachedSelection: AttachedSelection | null;
     setAttachedSelection: (selection: AttachedSelection | null) => void;
@@ -40,6 +50,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     const [agentMessages, setAgentMessages] = useState<ChatMessage[]>([]);
     const [isPanelOpen, setIsPanelOpen] = useState(true);
     const [aiActionHandler, setAIActionHandler] = useState<AIActionHandler | null>(null);
+    const [voiceToolHandler, setVoiceToolHandler] = useState<VoiceToolHandler | null>(null);
     const [attachedSelection, setAttachedSelectionState] = useState<AttachedSelection | null>(null);
 
     // Load workspace state from IDB on mount
@@ -210,6 +221,10 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         setAIActionHandler(() => handler);
     }, []);
 
+    const setVoiceToolHandlerSafe = useCallback((handler: VoiceToolHandler | null) => {
+        setVoiceToolHandler(() => handler);
+    }, []);
+
     const setAttachedSelection = useCallback((selection: AttachedSelection | null) => {
         setAttachedSelectionState(selection);
         // Open panel when attaching a selection
@@ -241,6 +256,8 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
                 togglePanel,
                 aiActionHandler,
                 setAIActionHandler: setAIActionHandlerSafe,
+                voiceToolHandler,
+                setVoiceToolHandler: setVoiceToolHandlerSafe,
                 attachedSelection,
                 setAttachedSelection,
                 clearAttachedSelection,

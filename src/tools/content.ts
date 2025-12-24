@@ -228,9 +228,16 @@ export const getContentTools = (context: ToolContext): ToolDefinition[] => {
                 additionalProperties: false
             },
             async ({ instruction }: { instruction: string }) => {
+                const actionMethods = getActionMethods();
+
+                // Fallback for CustomDocEditor (where AIActions might not be initialized)
+                if (!actionMethods || typeof actionMethods.insertTrackedChange !== 'function') {
+                    return 'This AI-powered tracked changes feature is not available in this editor. Please use the `editText` tool with `trackChanges: true` to make your edits manually based on the instruction.';
+                }
+
                 validateEditor('insertTrackedChanges');
                 try {
-                    return await getActionMethods().insertTrackedChange(instruction);
+                    return await actionMethods.insertTrackedChange(instruction);
                 } catch (error) {
                     console.error('[insertTrackedChanges] Error:', error);
                     throw new Error(`Failed to insert tracked changes: ${error instanceof Error ? error.message : 'Unknown error'}`);
@@ -248,9 +255,16 @@ export const getContentTools = (context: ToolContext): ToolDefinition[] => {
                 additionalProperties: false
             },
             async ({ instruction }: { instruction: string }) => {
+                const actionMethods = getActionMethods();
+
+                // Fallback for CustomDocEditor
+                if (!actionMethods || typeof actionMethods.insertComments !== 'function') {
+                    return 'This AI-powered comment feature is not available. Please use the `insertComment` tool to insert comments on specific text.';
+                }
+
                 validateEditor('insertComments');
                 try {
-                    return await getActionMethods().insertComments(instruction);
+                    return await actionMethods.insertComments(instruction);
                 } catch (error) {
                     console.error('[insertComments] Error:', error);
                     throw new Error(`Failed to insert comments: ${error instanceof Error ? error.message : 'Unknown error'}`);
@@ -284,25 +298,32 @@ export const getContentTools = (context: ToolContext): ToolDefinition[] => {
                 }
             }
         ),
-        createTool(
-            'summarize',
-            'Summarize content.',
-            {
-                type: 'object',
-                properties: { instruction: { type: 'string' } },
-                required: ['instruction'],
-                additionalProperties: false
-            },
-            async ({ instruction }: { instruction: string }) => {
-                validateEditor('summarize');
-                try {
-                    return await getActionMethods().summarize(instruction);
-                } catch (error) {
-                    console.error('[summarize] Error:', error);
-                    throw new Error(`Failed to summarize: ${error instanceof Error ? error.message : 'Unknown error'}`);
-                }
-            }
-        ),
+        // createTool(
+        //     'summarize',
+        //     'Summarize content.',
+        //     {
+        //         type: 'object',
+        //         properties: { instruction: { type: 'string' } },
+        //         required: ['instruction'],
+        //         additionalProperties: false
+        //     },
+        //     async ({ instruction }: { instruction: string }) => {
+        //         const actionMethods = getActionMethods();
+
+        //         // Fallback for CustomDocEditor
+        //         if (!actionMethods || typeof actionMethods.summarize !== 'function') {
+        //             return 'Summarization is not available in this editor. Please use `readDocument` to read the content and summarize it yourself.';
+        //         }
+
+        //         validateEditor('summarize');
+        //         try {
+        //             return await actionMethods.summarize(instruction);
+        //         } catch (error) {
+        //             console.error('[summarize] Error:', error);
+        //             throw new Error(`Failed to summarize: ${error instanceof Error ? error.message : 'Unknown error'}`);
+        //         }
+        //     }
+        // ),
         createTool(
             'editText',
             'Find text and optionally replace it, then apply formatting styles. The primary tool for text editing and styling. Supports "contextBefore" and "contextAfter" to distinguish identical text occurrences.',
@@ -313,7 +334,7 @@ export const getContentTools = (context: ToolContext): ToolDefinition[] => {
                     replace: { type: 'string', description: 'Optional: Replacement text. If omitted, text is not replaced (style-only mode).' },
                     contextBefore: { type: 'string', description: 'Optional text immediately preceding the target text to ensure the correct occurrence is edited.' },
                     contextAfter: { type: 'string', description: 'Optional text immediately following the target text to ensure the correct occurrence is edited.' },
-                    trackChanges: { type: 'boolean', description: 'Whether to track changes (only applies if text is replaced)' },
+                    // trackChanges: { type: 'boolean', description: 'Whether to track changes (only applies if text is replaced). Defaults to true.' },
                     headingLevel: {
                         type: 'integer',
                         enum: [1, 2, 3, 4, 5, 6],
@@ -343,12 +364,12 @@ export const getContentTools = (context: ToolContext): ToolDefinition[] => {
                 required: ['find'],
                 additionalProperties: false
             },
-            async ({ find, replace, contextBefore, contextAfter, trackChanges, headingLevel, bold, italic, underline, strikethrough, code }: {
+            async ({ find, replace, contextBefore, contextAfter, headingLevel, bold, italic, underline, strikethrough, code }: {
                 find: string,
                 replace?: string,
                 contextBefore?: string,
                 contextAfter?: string,
-                trackChanges?: boolean,
+                // trackChanges?: boolean,
                 headingLevel?: number,
                 bold?: boolean,
                 italic?: boolean,
@@ -384,10 +405,12 @@ export const getContentTools = (context: ToolContext): ToolDefinition[] => {
                 if (isReplacing) {
                     try {
                         const schema = editor.state.schema;
+                        // Default trackChanges to true for replacements (unless explicitly false)
+                        const shouldTrackChanges = true;
+
                         // Manual Track Changes (Robust Fallback)
-                        // If trackChanges is requested, we manually apply the marks to ensure it works
-                        // regardless of the editor's "suggesting" mode state or async timing.
-                        if (trackChanges === true) {
+                        // We manually apply the marks to ensure it works regardless of editor mode
+                        if (shouldTrackChanges) {
                             const insertionMarkType = schema.marks.insertion ||
                                 schema.marks.trackChangesInsertion ||
                                 schema.marks.insert;
@@ -396,39 +419,70 @@ export const getContentTools = (context: ToolContext): ToolDefinition[] => {
                                 schema.marks.delete;
 
                             if (insertionMarkType && deletionMarkType) {
-                                console.log('[editText] Manually applying track changes marks (Robust Mode)');
+                                console.log('[editText] Applying minimal diff track changes');
 
                                 const tr = editor.state.tr;
 
-                                // 1. Mark existing text as deleted
-                                tr.addMark(from, to, deletionMarkType.create());
+                                // Compute minimal diff between original and replacement
+                                // Find common prefix and suffix to minimize tracked changes
+                                const originalText = find;
+                                const newText = effectiveReplace;
 
-                                // 2. Insert new text with insertion mark
-                                // We inherit existing marks (like bold/italic) but exclude deletion marks
-                                const $pos = tr.doc.resolve(from);
-                                const existingMarks = $pos.marks().filter((m: any) =>
-                                    m.type !== deletionMarkType && m.type !== insertionMarkType
-                                );
-                                const newMarks = [...existingMarks, insertionMarkType.create()];
+                                // Find common prefix length
+                                let prefixLen = 0;
+                                const minLen = Math.min(originalText.length, newText.length);
+                                while (prefixLen < minLen && originalText[prefixLen] === newText[prefixLen]) {
+                                    prefixLen++;
+                                }
 
-                                const newTextNode = schema.text(effectiveReplace, newMarks);
-                                tr.insert(to, newTextNode);
+                                // Find common suffix length (but don't overlap with prefix)
+                                let suffixLen = 0;
+                                while (
+                                    suffixLen < (originalText.length - prefixLen) &&
+                                    suffixLen < (newText.length - prefixLen) &&
+                                    originalText[originalText.length - 1 - suffixLen] === newText[newText.length - 1 - suffixLen]
+                                ) {
+                                    suffixLen++;
+                                }
+
+                                // Calculate the changed portions
+                                const deletedPart = originalText.slice(prefixLen, originalText.length - suffixLen);
+                                const insertedPart = newText.slice(prefixLen, newText.length - suffixLen);
+
+                                // Positions in document
+                                const deleteFrom = from + prefixLen;
+                                const deleteTo = to - suffixLen;
+
+                                console.log(`[editText] Diff: prefix=${prefixLen}, suffix=${suffixLen}, delete="${deletedPart}", insert="${insertedPart}"`);
+
+                                // Apply minimal changes
+                                if (deletedPart.length > 0) {
+                                    // Mark only the deleted portion
+                                    tr.addMark(deleteFrom, deleteTo, deletionMarkType.create());
+                                }
+
+                                if (insertedPart.length > 0) {
+                                    // Insert only the new portion with insertion mark
+                                    const $pos = tr.doc.resolve(deleteFrom);
+                                    const existingMarks = $pos.marks().filter((m: any) =>
+                                        m.type !== deletionMarkType && m.type !== insertionMarkType
+                                    );
+                                    const newMarks = [...existingMarks, insertionMarkType.create()];
+                                    const newTextNode = schema.text(insertedPart, newMarks);
+                                    tr.insert(deleteTo, newTextNode);
+                                }
 
                                 // Dispatch the change
                                 editor.view.dispatch(tr);
 
-                                // 3. Update selection to the new text (for subsequent formatting)
-                                // The new text starts at 'to' and has length 'effectiveReplace.length'
-                                const newTextEnd = to + effectiveReplace.length;
-                                editor.chain().setTextSelection({ from: to, to: newTextEnd }).run();
+                                // Update selection to end of new content
+                                const newTextEnd = from + newText.length;
+                                editor.chain().setTextSelection({ from, to: newTextEnd }).run();
 
-                                resultMsg += ` with "${effectiveReplace}" (Tracked)`;
+                                resultMsg += ` with "${effectiveReplace}" (Tracked: -"${deletedPart || '(none)'}" +"${insertedPart || '(none)'}")`;
 
-                                // Update 'from' and 'to' for subsequent styling
-                                const newStart = to;
-                                const newEnd = to + effectiveReplace.length;
-                                from = newStart;
-                                to = newEnd;
+                                // Update from/to for subsequent styling
+                                to = from + newText.length;
 
                             } else {
                                 // Fallback to mode switching if marks not found
@@ -440,9 +494,7 @@ export const getContentTools = (context: ToolContext): ToolDefinition[] => {
                             }
                         } else {
                             // Standard replacement (no tracking, or explicit false)
-                            if (trackChanges === false) {
-                                if (superdoc?.setDocumentMode) superdoc.setDocumentMode('editing');
-                            }
+                            if (superdoc?.setDocumentMode) superdoc.setDocumentMode('editing');
                             performStandardReplace();
                             resultMsg = `Replaced "${find}" with "${effectiveReplace}"`;
                             to = from + effectiveReplace.length;
@@ -526,100 +578,231 @@ export const getContentTools = (context: ToolContext): ToolDefinition[] => {
             }
         ),
         createTool(
-            'manageTrackedChange',
-            'Accept or reject a specific tracked change (insertion or deletion). Use readDocument({ includeDeletions: true }) first to find deleted text.',
+            'insertText',
+            'Insert text at a specific location in the document by finding anchor text. Use this when you need to ADD new content without replacing existing text. Supports inserting before or after found text.',
             {
                 type: 'object',
                 properties: {
-                    find: { type: 'string', description: 'The text of the changed content (e.g., the deleted text or the inserted text).' },
-                    action: { type: 'string', enum: ['accept', 'reject'], description: 'Whether to accept or reject the change.' },
-                    contextBefore: { type: 'string', description: 'Optional context before match.' },
-                    contextAfter: { type: 'string', description: 'Optional context after match.' }
+                    text: { type: 'string', description: 'The text content to insert' },
+                    anchorText: { type: 'string', description: 'Text to find in the document to anchor the insertion position' },
+                    position: {
+                        type: 'string',
+                        enum: ['before', 'after'],
+                        description: 'Whether to insert before or after the anchor text. Default is "after".'
+                    },
+                    asNewParagraph: {
+                        type: 'boolean',
+                        description: 'If true, inserts as a new paragraph (adds line break). Default is true.'
+                    },
+                    contextBefore: { type: 'string', description: 'Optional text immediately preceding the anchor text to ensure the correct occurrence is found.' },
+                    contextAfter: { type: 'string', description: 'Optional text immediately following the anchor text to ensure the correct occurrence is found.' },
+                    trackChanges: { type: 'boolean', description: 'Whether to track this insertion. Defaults to true.' }
                 },
-                required: ['find', 'action'],
+                required: ['text', 'anchorText'],
                 additionalProperties: false
             },
-            async ({ find, action, contextBefore, contextAfter }: { find: string, action: 'accept' | 'reject', contextBefore?: string, contextAfter?: string }) => {
+            async ({ text, anchorText, position = 'after', asNewParagraph = true, contextBefore, contextAfter, trackChanges = true }: {
+                text: string,
+                anchorText: string,
+                position?: 'before' | 'after',
+                asNewParagraph?: boolean,
+                contextBefore?: string,
+                contextAfter?: string,
+                trackChanges?: boolean
+            }) => {
                 const editor = getEditor();
                 if (!editor) throw new Error('Editor not initialized');
 
-                // 1. Find the change
-                const changePos = findTrackedChange(editor.state.doc, find, action, { contextBefore, contextAfter });
+                // 1. Find the anchor text
+                const anchorPosition = findTextPositionExcludingDeletions(editor.state.doc, anchorText, { contextBefore, contextAfter });
 
-                if (!changePos) {
-                    return `Tracked change containing "${find}" not found.`;
+                if (!anchorPosition) {
+                    let msg = `Anchor text "${anchorText}" not found in document.`;
+                    if (contextBefore || contextAfter) {
+                        msg += ` (Context: before="${contextBefore || ''}", after="${contextAfter || ''}")`;
+                    }
+                    return msg;
                 }
 
-                // 2. Perform Action
-                const { from, to, type } = changePos;
-                let resultMessage = '';
+                const { from, to } = anchorPosition;
+
+                // 2. Determine insert position
+                // For 'after', we need to find the end of the containing block if asNewParagraph
+                let insertPos = position === 'after' ? to : from;
+
+                if (asNewParagraph) {
+                    const $pos = editor.state.doc.resolve(position === 'after' ? to : from);
+                    // Find the parent block
+                    for (let d = $pos.depth; d > 0; d--) {
+                        const parentNode = $pos.node(d);
+                        if (parentNode.isBlock) {
+                            insertPos = position === 'after' ? $pos.after(d) : $pos.before(d);
+                            break;
+                        }
+                    }
+                }
+
+                console.log(`[insertText] Inserting "${text.substring(0, 30)}..." ${position} "${anchorText}" at position ${insertPos}`);
 
                 try {
+                    const schema = editor.state.schema;
                     const tr = editor.state.tr;
 
-                    if (type === 'insertion') {
-                        if (action === 'accept') {
-                            // Remove insertion mark, keep text
-                            const insertionMark = editor.schema.marks.insertion ||
-                                editor.schema.marks.trackChangesInsertion ||
-                                editor.schema.marks.insert;
+                    // 3. Create the content to insert
+                    let contentToInsert;
 
-                            if (insertionMark) {
-                                tr.removeMark(from, to, insertionMark);
-                            } else {
-                                // Fallback
-                                const node = editor.state.doc.nodeAt(from);
-                                if (node) {
-                                    const mark = node.marks.find((m: any) => m.type.name.toLowerCase().includes('insert'));
-                                    if (mark) tr.removeMark(from, to, mark.type);
-                                }
-                            }
-                            resultMessage = `Accepted insertion of "${find}".`;
-                        } else {
-                            // Reject insertion -> Delete the text
-                            tr.delete(from, to);
-                            resultMessage = `Rejected insertion of "${find}". Text removed.`;
+                    if (asNewParagraph) {
+                        // Create a paragraph node with the text
+                        const paragraphType = schema.nodes.paragraph;
+                        if (!paragraphType) {
+                            throw new Error('Paragraph node type not found in schema');
                         }
-                    } else if (type === 'deletion') {
-                        if (action === 'accept') {
-                            // Accept deletion -> Delete the text permanently
-                            tr.delete(from, to);
-                            resultMessage = `Accepted deletion of "${find}". Text removed permanently.`;
-                        } else {
-                            // Reject deletion -> Restore text (remove deletion mark)
-                            const deletionMark = editor.schema.marks.deletion ||
-                                editor.schema.marks.trackChangesDeletion ||
-                                editor.schema.marks.diffMarkDeletion;
 
-                            if (deletionMark) {
-                                tr.removeMark(from, to, deletionMark);
-                                resultMessage = `Rejected deletion of "${find}". Text restored.`;
+                        if (trackChanges) {
+                            // Add insertion mark for track changes
+                            const insertionMarkType = schema.marks.insertion ||
+                                schema.marks.trackChangesInsertion ||
+                                schema.marks.insert;
+
+                            if (insertionMarkType) {
+                                const textWithMark = schema.text(text, [insertionMarkType.create()]);
+                                contentToInsert = paragraphType.create(null, textWithMark);
                             } else {
-                                // Fallback
-                                const node = editor.state.doc.nodeAt(from);
-                                if (node) {
-                                    const mark = node.marks.find((m: any) => m.type.name.toLowerCase().includes('delete'));
-                                    if (mark) {
-                                        tr.removeMark(from, to, mark.type);
-                                        resultMessage = `Rejected deletion of "${find}". Text restored.`;
-                                    }
-                                }
-                                if (!resultMessage) resultMessage = `Could not find deletion mark to remove for "${find}".`;
+                                console.warn('[insertText] Insertion mark not found, inserting without track changes');
+                                contentToInsert = paragraphType.create(null, schema.text(text));
                             }
+                        } else {
+                            contentToInsert = paragraphType.create(null, schema.text(text));
+                        }
+
+                        tr.insert(insertPos, contentToInsert);
+                    } else {
+                        // Insert inline text
+                        if (trackChanges) {
+                            const insertionMarkType = schema.marks.insertion ||
+                                schema.marks.trackChangesInsertion ||
+                                schema.marks.insert;
+
+                            if (insertionMarkType) {
+                                const textWithMark = schema.text(text, [insertionMarkType.create()]);
+                                tr.insert(insertPos, textWithMark);
+                            } else {
+                                console.warn('[insertText] Insertion mark not found, inserting without track changes');
+                                tr.insertText(text, insertPos);
+                            }
+                        } else {
+                            tr.insertText(text, insertPos);
                         }
                     }
 
-                    if (resultMessage && !resultMessage.startsWith('Could not')) {
-                        editor.view.dispatch(tr);
-                    }
+                    // 4. Dispatch the transaction
+                    editor.view.dispatch(tr);
 
-                    return resultMessage || `Processed ${action} on ${type} of "${find}".`;
+                    const trackingStatus = trackChanges ? ' (tracked)' : '';
+                    const paragraphStatus = asNewParagraph ? ' as new paragraph' : ' inline';
+                    return `Inserted "${text.substring(0, 50)}${text.length > 50 ? '...' : ''}" ${position} "${anchorText}"${paragraphStatus}${trackingStatus}`;
 
                 } catch (e: any) {
-                    return `Error managing change: ${e.message}`;
+                    console.error('[insertText] Error:', e);
+                    return `Error inserting text: ${e.message}`;
                 }
             }
         ),
+        // createTool(
+        //     'manageTrackedChange',
+        //     'Accept or reject a specific tracked change (insertion or deletion). IMPORTANT: Only use this when the user explicitly asks you to "accept" or "reject" changes. NEVER use this to finalize or "clean up" your own edits; track changes must remain for the user to verify.',
+        //     {
+        //         type: 'object',
+        //         properties: {
+        //             find: { type: 'string', description: 'The text of the changed content (e.g., the deleted text or the inserted text).' },
+        //             action: { type: 'string', enum: ['accept', 'reject'], description: 'Whether to accept or reject the change.' },
+        //             contextBefore: { type: 'string', description: 'Optional context before match.' },
+        //             contextAfter: { type: 'string', description: 'Optional context after match.' }
+        //         },
+        //         required: ['find', 'action'],
+        //         additionalProperties: false
+        //     },
+        //     async ({ find, action, contextBefore, contextAfter }: { find: string, action: 'accept' | 'reject', contextBefore?: string, contextAfter?: string }) => {
+        //         const editor = getEditor();
+        //         if (!editor) throw new Error('Editor not initialized');
+
+        //         // 1. Find the change
+        //         const changePos = findTrackedChange(editor.state.doc, find, action, { contextBefore, contextAfter });
+
+        //         if (!changePos) {
+        //             return `Tracked change containing "${find}" not found.`;
+        //         }
+
+        //         // 2. Perform Action
+        //         const { from, to, type } = changePos;
+        //         let resultMessage = '';
+
+        //         try {
+        //             const tr = editor.state.tr;
+
+        //             if (type === 'insertion') {
+        //                 if (action === 'accept') {
+        //                     // Remove insertion mark, keep text
+        //                     const insertionMark = editor.schema.marks.insertion ||
+        //                         editor.schema.marks.trackChangesInsertion ||
+        //                         editor.schema.marks.insert;
+
+        //                     if (insertionMark) {
+        //                         tr.removeMark(from, to, insertionMark);
+        //                     } else {
+        //                         // Fallback
+        //                         const node = editor.state.doc.nodeAt(from);
+        //                         if (node) {
+        //                             const mark = node.marks.find((m: any) => m.type.name.toLowerCase().includes('insert'));
+        //                             if (mark) tr.removeMark(from, to, mark.type);
+        //                         }
+        //                     }
+        //                     resultMessage = `Accepted insertion of "${find}".`;
+        //                 } else {
+        //                     // Reject insertion -> Delete the text
+        //                     tr.delete(from, to);
+        //                     resultMessage = `Rejected insertion of "${find}". Text removed.`;
+        //                 }
+        //             } else if (type === 'deletion') {
+        //                 if (action === 'accept') {
+        //                     // Accept deletion -> Delete the text permanently
+        //                     tr.delete(from, to);
+        //                     resultMessage = `Accepted deletion of "${find}". Text removed permanently.`;
+        //                 } else {
+        //                     // Reject deletion -> Restore text (remove deletion mark)
+        //                     const deletionMark = editor.schema.marks.deletion ||
+        //                         editor.schema.marks.trackChangesDeletion ||
+        //                         editor.schema.marks.diffMarkDeletion;
+
+        //                     if (deletionMark) {
+        //                         tr.removeMark(from, to, deletionMark);
+        //                         resultMessage = `Rejected deletion of "${find}". Text restored.`;
+        //                     } else {
+        //                         // Fallback
+        //                         const node = editor.state.doc.nodeAt(from);
+        //                         if (node) {
+        //                             const mark = node.marks.find((m: any) => m.type.name.toLowerCase().includes('delete'));
+        //                             if (mark) {
+        //                                 tr.removeMark(from, to, mark.type);
+        //                                 resultMessage = `Rejected deletion of "${find}". Text restored.`;
+        //                             }
+        //                         }
+        //                         if (!resultMessage) resultMessage = `Could not find deletion mark to remove for "${find}".`;
+        //                     }
+        //                 }
+        //             }
+
+        //             if (resultMessage && !resultMessage.startsWith('Could not')) {
+        //                 editor.view.dispatch(tr);
+        //             }
+
+        //             return resultMessage || `Processed ${action} on ${type} of "${find}".`;
+
+        //         } catch (e: any) {
+        //             return `Error managing change: ${e.message}`;
+        //         }
+        //     }
+        // ),
         createTool(
             'insertComment',
             'Insert a comment on specific text. Supports context for disambiguation.',

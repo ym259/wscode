@@ -4,7 +4,7 @@
  * Unified AI agent that handles all file types (DOCX, XLSX, etc.)
  * with dynamic tool loading based on active file type.
  * 
- * Replaces both useAiAssistant and useXlsxAiAssistant.
+ * Supports both SuperDoc (main app) and CustomDocEditor (editorv2).
  * 
  * @module components/editor/hooks/useUniversalAgent
  */
@@ -28,8 +28,10 @@ export type FileType = 'docx' | 'xlsx' | 'txt' | 'pdf' | null;
 
 /** Configuration for universal agent */
 export interface UniversalAgentConfig {
-    /** Reference to SuperDoc instance (for DOCX editing) */
+    /** Reference to SuperDoc instance (for DOCX editing in main app) */
     superdocRef?: RefObject<SuperDoc | null>;
+    /** Reference to CustomDocEditor instance (alternative to SuperDoc for editorv2) */
+    customEditorRef?: RefObject<any>;
     /** Whether the editor is ready */
     isReady: boolean;
     /** Active file path */
@@ -42,6 +44,8 @@ export interface UniversalAgentConfig {
     workspaceFiles?: FileSystemItem[];
     /** Handler setter from WorkspaceContext */
     setAIActionHandler: (handler: any) => void;
+    /** Voice tool handler setter from WorkspaceContext */
+    setVoiceToolHandler?: (handler: ((name: string, args: Record<string, unknown>) => Promise<string>) | null) => void;
     /** XLSX specific: callback for live cell updates */
     setCellValue?: (cell: string, value: string | number, sheetName?: string, isNumber?: boolean) => void;
     /** Callback to open a file in the editor (switches active file) */
@@ -68,16 +72,22 @@ function buildToolContext(
     config: UniversalAgentConfig,
     aiActions?: AIActions | null
 ): ToolContext {
-    const { superdocRef, workspaceFiles, activeFilePath, activeFileHandle, setCellValue, openFileInEditor } = config;
+    const { superdocRef, customEditorRef, workspaceFiles, activeFilePath, activeFileHandle, setCellValue, openFileInEditor } = config;
 
-    // Helper to get TipTap editor from SuperDoc
+    // Helper to get TipTap editor from SuperDoc or CustomDocEditor
     const getEditor = () => {
+        // Try CustomDocEditor first (if provided)
+        if (customEditorRef?.current) {
+            const ce = customEditorRef.current;
+            return ce.editor || ce.getEditor?.() || ce;
+        }
+        // Fall back to SuperDoc
         if (!superdocRef?.current) return null;
         const sd = superdocRef.current as any;
         return sd.activeEditor || sd.editor || sd.getEditor?.() || sd._editor;
     };
 
-    // Helper to get AIActions methods
+    // Helper to get AIActions methods (only available with SuperDoc)
     const getActionMethods = () => aiActions ? (aiActions as any).action : ({} as any);
 
     return {
@@ -86,7 +96,8 @@ function buildToolContext(
         workspaceFiles,
         activeFilePath,
         activeFileHandle,
-        superdoc: superdocRef?.current || ({} as any),
+        // Expose superdoc or custom editor as 'superdoc' for compatibility
+        superdoc: superdocRef?.current || customEditorRef?.current || ({} as any),
         setCellValue,
         openFileInEditor
     };
@@ -280,6 +291,7 @@ If a task has multiple steps:
 - You can WRITE only to the active file
 - To write to a different file, use \`openFile(path)\` first
 - Always confirm with user before proceeding with cross-file edits
+- Focus on the user intent and verify the result. Accurate and concise action is appreciated rather than verbose and unnecessary / excessive actions.
 `;
 
     return prompt;
@@ -289,15 +301,18 @@ If a task has multiple steps:
  * Universal Agent Hook
  * 
  * Handles all file types with dynamic tool loading.
+ * Works with both SuperDoc (main app) and CustomDocEditor (editorv2).
  */
 export function useUniversalAgent(config: UniversalAgentConfig) {
     const {
         superdocRef,
+        customEditorRef,
         isReady,
         activeFilePath,
         activeFileHandle,
         workspaceFiles,
         setAIActionHandler,
+        setVoiceToolHandler,
         setCellValue,
         openFileInEditor
     } = config;
@@ -307,25 +322,38 @@ export function useUniversalAgent(config: UniversalAgentConfig) {
     const aiActionsRef = useRef<AIActions | null>(null);
     const [isAiInitialized, setIsAiInitialized] = useState(false);
 
-    // Initialize AIActions for DOCX (needed for SuperDoc integration)
+    // Determine which editor mode we're in
+    const usingSuperDoc = !!superdocRef?.current;
+    const usingCustomEditor = !!customEditorRef?.current;
+
+    // Initialize AIActions for DOCX (only needed for SuperDoc integration)
     useEffect(() => {
-        // Only initialize for DOCX files that have SuperDoc
-        if (!isReady || !superdocRef?.current || activeFileType !== 'docx') {
+        // Only initialize AIActions for SuperDoc-based DOCX editing
+        if (!isReady || activeFileType !== 'docx' || !usingSuperDoc) {
+            // If using custom editor for DOCX, we're ready without AIActions
+            if (isReady && activeFileType === 'docx' && usingCustomEditor) {
+                console.log('[UniversalAgent] Using CustomDocEditor, no AIActions needed');
+                setIsAiInitialized(true);
+                return;
+            }
+
+            // For non-docx files, we're ready without AIActions
+            if (isReady && activeFileType && activeFileType !== 'docx') {
+                setIsAiInitialized(true);
+                return;
+            }
+
             if (aiActionsRef.current) {
                 console.log('[UniversalAgent] Clearing AIActions');
                 aiActionsRef.current = null;
                 setIsAiInitialized(false);
-            }
-            // For non-docx files, we're ready without AIActions
-            if (isReady && activeFileType && activeFileType !== 'docx') {
-                setIsAiInitialized(true);
             }
             return;
         }
 
         if (aiActionsRef.current) return;
 
-        console.log('[UniversalAgent] Initializing AIActions for DOCX...');
+        console.log('[UniversalAgent] Initializing AIActions for SuperDoc...');
 
         // Debug: Log SuperDoc state before initialization
         const sd = superdocRef.current as any;
@@ -357,22 +385,23 @@ export function useUniversalAgent(config: UniversalAgentConfig) {
             console.error('[UniversalAgent] Failed to initialize AIActions:', err);
             setIsAiInitialized(false);
         }
-    }, [isReady, superdocRef, activeFileType]);
+    }, [isReady, superdocRef, customEditorRef, activeFileType, usingSuperDoc, usingCustomEditor]);
 
     // Handler for AI actions
     const handleAiAction = useCallback(async (
         prompt: string,
         history: ChatMessage[],
-        onUpdate: (event: AgentEvent) => void
+        onUpdate: (event: AgentEvent) => void,
+        images?: string[]
     ) => {
         if (!isReady) {
             console.warn('[UniversalAgent] Not ready.');
             return;
         }
 
-        // For DOCX, wait for AIActions
-        if (activeFileType === 'docx' && (!aiActionsRef.current || !superdocRef?.current)) {
-            console.warn('[UniversalAgent] DOCX editor not ready.');
+        // For DOCX with SuperDoc, wait for AIActions
+        if (activeFileType === 'docx' && usingSuperDoc && !aiActionsRef.current) {
+            console.warn('[UniversalAgent] DOCX editor (SuperDoc) not ready.');
             return;
         }
 
@@ -381,9 +410,10 @@ export function useUniversalAgent(config: UniversalAgentConfig) {
                 await aiActionsRef.current.waitUntilReady();
             }
 
-            // Build tool context using stable props (not config object)
+            // Build tool context
             const contextConfig: UniversalAgentConfig = {
                 superdocRef,
+                customEditorRef,
                 isReady,
                 activeFilePath,
                 activeFileType,
@@ -401,9 +431,8 @@ export function useUniversalAgent(config: UniversalAgentConfig) {
 
             // Get document stats for DOCX
             let docStats: { charCount: number; blockCount: number; estimatedPages: number } | undefined;
-            if (activeFileType === 'docx' && superdocRef?.current) {
-                const sd = superdocRef.current as any;
-                const editor = sd.activeEditor || sd.editor || sd.getEditor?.() || sd._editor;
+            if (activeFileType === 'docx') {
+                const editor = context.getEditor();
                 const CHARS_PER_PAGE = 3000;
                 let charCount = 0;
                 let blockCount = 0;
@@ -426,7 +455,8 @@ export function useUniversalAgent(config: UniversalAgentConfig) {
             console.log('[UniversalAgent] Context:', {
                 activeFilePath,
                 activeFileType,
-                hasSuperdoc: !!superdocRef?.current,
+                hasSuperdoc: usingSuperDoc,
+                hasCustomEditor: usingCustomEditor,
                 toolCount: toolDefinitions.length,
                 toolNames: toolDefinitions.map(t => t.function.name)
             });
@@ -454,7 +484,15 @@ export function useUniversalAgent(config: UniversalAgentConfig) {
                 ...history.flatMap(msg => {
                     const items: any[] = [];
                     if (msg.role === 'user') {
-                        items.push({ type: 'message', role: 'user', content: msg.content || '' });
+                        if (msg.images && msg.images.length > 0) {
+                            const content = [
+                                { type: 'input_text', text: msg.content || '' },
+                                ...msg.images.map(img => ({ type: 'input_image', image_url: img }))
+                            ];
+                            items.push({ type: 'message', role: 'user', content });
+                        } else {
+                            items.push({ type: 'message', role: 'user', content: msg.content || '' });
+                        }
                     } else if (msg.role === 'assistant') {
                         if (msg.content) {
                             items.push({ type: 'message', role: 'assistant', content: msg.content });
@@ -481,7 +519,16 @@ export function useUniversalAgent(config: UniversalAgentConfig) {
                     }
                     return items;
                 }),
-                { type: 'message', role: 'user', content: prompt }
+                {
+                    type: 'message',
+                    role: 'user',
+                    content: (images && images.length > 0)
+                        ? [
+                            { type: 'input_text', text: prompt },
+                            ...images.map(img => ({ type: 'input_image', image_url: img }))
+                        ]
+                        : prompt
+                }
             ];
 
             // Convert tools to Responses API format
@@ -507,8 +554,12 @@ export function useUniversalAgent(config: UniversalAgentConfig) {
                     input: messages as any,
                     tools: responsesApiTools,
                     stream: true,
+                    parallel_tool_calls: true,
                     previous_response_id: previousResponseId,
                     reasoning: { summary: 'auto', effort: 'medium' },
+                    text: {
+                        verbosity: 'low'
+                    }
                 });
 
                 let finalContent = '';
@@ -607,18 +658,120 @@ export function useUniversalAgent(config: UniversalAgentConfig) {
             onUpdate({ type: 'run_completed', timestamp: Date.now() });
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [isReady, activeFileType, superdocRef, workspaceFiles, activeFilePath, activeFileHandle, setCellValue]);
+    }, [isReady, activeFileType, superdocRef, customEditorRef, workspaceFiles, activeFilePath, activeFileHandle, setCellValue, usingSuperDoc, usingCustomEditor]);
 
-    // Register handler
+    // Store handleAiAction in a ref to avoid dependency issues
+    const handleAiActionRef = useRef(handleAiAction);
+    handleAiActionRef.current = handleAiAction;
+
+    // Create a stable wrapper function
+    const stableHandler = useCallback(async (
+        prompt: string,
+        history: ChatMessage[],
+        onUpdate: (event: AgentEvent) => void,
+        images?: string[]
+    ) => {
+        return handleAiActionRef.current(prompt, history, onUpdate, images);
+    }, []);
+
+    // Track if we've registered the handler
+    const hasRegisteredRef = useRef(false);
+
+    // Register handler - only run when ready state changes
     useEffect(() => {
-        if (isAiInitialized || (isReady && activeFileType && activeFileType !== 'docx')) {
+        const shouldRegister = isAiInitialized || (isReady && activeFileType && activeFileType !== 'docx');
+
+        if (shouldRegister && !hasRegisteredRef.current) {
             console.log('[UniversalAgent] Registering handler, fileType:', activeFileType);
-            setAIActionHandler(handleAiAction);
-        } else {
+            setAIActionHandler(stableHandler);
+            hasRegisteredRef.current = true;
+        } else if (!shouldRegister && hasRegisteredRef.current) {
             setAIActionHandler(null);
+            hasRegisteredRef.current = false;
         }
-        return () => setAIActionHandler(null);
-    }, [isAiInitialized, isReady, activeFileType, handleAiAction, setAIActionHandler]);
+
+        return () => {
+            if (hasRegisteredRef.current) {
+                setAIActionHandler(null);
+                hasRegisteredRef.current = false;
+            }
+        };
+    }, [isAiInitialized, isReady, activeFileType, stableHandler, setAIActionHandler]);
+
+    // Create voice tool handler for executing individual tools by name
+    const voiceToolHandlerRef = useRef<((name: string, args: Record<string, unknown>) => Promise<string>) | null>(null);
+    const hasVoiceRegisteredRef = useRef(false);
+
+    useEffect(() => {
+        if (!isReady || !setVoiceToolHandler) {
+            if (hasVoiceRegisteredRef.current) {
+                voiceToolHandlerRef.current = null;
+                setVoiceToolHandler?.(null);
+                hasVoiceRegisteredRef.current = false;
+            }
+            return;
+        }
+
+        // Only register once when ready
+        if (hasVoiceRegisteredRef.current) {
+            return;
+        }
+
+        // Build tool context
+        const contextConfig: UniversalAgentConfig = {
+            superdocRef,
+            customEditorRef,
+            isReady,
+            activeFilePath,
+            activeFileType,
+            activeFileHandle,
+            workspaceFiles,
+            setAIActionHandler,
+            setVoiceToolHandler,
+            setCellValue,
+            openFileInEditor
+        };
+        const context = buildToolContext(contextConfig, aiActionsRef.current);
+        const toolDefinitions = getToolsForFileType(context, activeFileType);
+
+        // Create handler that can execute tools by name
+        const handler = async (toolName: string, args: Record<string, unknown>): Promise<string> => {
+            console.log('[UniversalAgent] Voice tool call:', toolName, args);
+
+            // Re-build tools at execution time to get fresh editor state
+            const freshContext = buildToolContext(contextConfig, aiActionsRef.current);
+            const freshTools = getToolsForFileType(freshContext, activeFileType);
+            const toolDef = freshTools.find(t => t.function.name === toolName);
+
+            if (!toolDef) {
+                return `Tool "${toolName}" not found. Available tools: ${freshTools.map(t => t.function.name).join(', ')}`;
+            }
+
+            try {
+                const result = await toolDef.execute(args);
+                console.log('[UniversalAgent] Voice tool result:', result);
+                return typeof result === 'string' ? result : JSON.stringify(result);
+            } catch (error) {
+                const errorMsg = error instanceof Error ? error.message : 'Unknown error';
+                console.error('[UniversalAgent] Voice tool error:', errorMsg);
+                return `Error executing ${toolName}: ${errorMsg}`;
+            }
+        };
+
+        voiceToolHandlerRef.current = handler;
+        setVoiceToolHandler(handler);
+        hasVoiceRegisteredRef.current = true;
+        console.log('[UniversalAgent] Voice tool handler registered with', toolDefinitions.length, 'tools');
+
+        return () => {
+            if (hasVoiceRegisteredRef.current) {
+                voiceToolHandlerRef.current = null;
+                setVoiceToolHandler?.(null);
+                hasVoiceRegisteredRef.current = false;
+            }
+        };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [isReady, activeFileType]);
 
     return { isAiInitialized, activeFileType };
 }

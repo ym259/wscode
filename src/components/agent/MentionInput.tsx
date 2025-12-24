@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useRef, useCallback, useEffect } from 'react';
-import { Send, Quote, X } from 'lucide-react';
+import { Send, Quote, X, Paperclip, Image as ImageIcon } from 'lucide-react';
 import { FileSystemItem } from '@/types';
 import { useWorkspace } from '@/contexts/WorkspaceContext';
 import styles from './AgentPanel.module.css';
@@ -12,14 +12,18 @@ interface MentionInputProps {
     onSubmit: (message?: string) => void;
     disabled: boolean;
     workspaceFiles: FileSystemItem[];
+    selectedImages?: string[];
+    onImageAdd?: (images: string[]) => void;
+    onImageRemove?: (index: number) => void;
 }
 
 /**
  * Textarea input with @mention autocomplete functionality and attached selection display
  */
-export function MentionInput({ value, onChange, onSubmit, disabled, workspaceFiles }: MentionInputProps) {
+export function MentionInput({ value, onChange, onSubmit, disabled, workspaceFiles, selectedImages = [], onImageAdd, onImageRemove }: MentionInputProps) {
     const { attachedSelection, clearAttachedSelection } = useWorkspace();
     const textareaRef = useRef<HTMLTextAreaElement>(null);
+    const fileInputRef = useRef<HTMLInputElement>(null);
     const [mentionQuery, setMentionQuery] = useState<string | null>(null);
     const [mentionStart, setMentionStart] = useState<number>(0);
     const [selectedMentionIndex, setSelectedMentionIndex] = useState(0);
@@ -140,6 +144,58 @@ export function MentionInput({ value, onChange, onSubmit, disabled, workspaceFil
         onChange(''); // Clear the input
     }, [attachedSelection, value, onChange, onSubmit, clearAttachedSelection]);
 
+    // Handle file selection
+    const handleFileChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+        const files = Array.from(e.target.files || []);
+        if (files.length === 0) return;
+
+        const imagePromises = files.map(file => {
+            return new Promise<string>((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = (event) => resolve(event.target?.result as string);
+                reader.onerror = reject;
+                reader.readAsDataURL(file);
+            });
+        });
+
+        Promise.all(imagePromises).then(base64Images => {
+            if (onImageAdd) onImageAdd(base64Images);
+        });
+        e.target.value = ''; // Reset input
+    }, [onImageAdd]);
+
+    // Handle paste event for clipboard images (e.g., screenshots)
+    const handlePaste = useCallback((e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+        const items = e.clipboardData?.items;
+        if (!items) return;
+
+        const imageFiles: File[] = [];
+        for (let i = 0; i < items.length; i++) {
+            const item = items[i];
+            if (item.type.startsWith('image/')) {
+                const file = item.getAsFile();
+                if (file) imageFiles.push(file);
+            }
+        }
+
+        if (imageFiles.length === 0) return; // No images, let default paste handle text
+
+        e.preventDefault(); // Prevent default paste only if we have images
+
+        const imagePromises = imageFiles.map(file => {
+            return new Promise<string>((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = (event) => resolve(event.target?.result as string);
+                reader.onerror = reject;
+                reader.readAsDataURL(file);
+            });
+        });
+
+        Promise.all(imagePromises).then(base64Images => {
+            if (onImageAdd) onImageAdd(base64Images);
+        });
+    }, [onImageAdd]);
+
     const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => {
         // Ignore keydown events during IME composition (e.g., Japanese, Chinese, Korean input)
         if (e.nativeEvent.isComposing) {
@@ -222,14 +278,64 @@ export function MentionInput({ value, onChange, onSubmit, disabled, workspaceFil
                 </div>
             )}
 
+            {/* Attached Images */}
+            {selectedImages.length > 0 && (
+                <div className={styles.attachedSelectionContainer}>
+                    {selectedImages.map((img, idx) => (
+                        <div key={idx} className={styles.attachedSelectionChip} style={{ padding: '4px 8px' }}>
+                            <ImageIcon size={14} className={styles.chipIcon} />
+                            <div className={styles.chipContent}>
+                                <img src={img} alt="attached" style={{ width: 20, height: 20, objectFit: 'cover', borderRadius: 2 }} />
+                                <span className={styles.chipFileName}>Image {idx + 1}</span>
+                            </div>
+                            <button
+                                type="button"
+                                className={styles.chipRemoveButton}
+                                onClick={() => onImageRemove?.(idx)}
+                                title="Remove image"
+                            >
+                                <X size={12} />
+                            </button>
+                        </div>
+                    ))}
+                </div>
+            )}
+
             <div className={styles.inputWrapper}>
+                <input
+                    type="file"
+                    ref={fileInputRef}
+                    style={{ display: 'none' }}
+                    onChange={handleFileChange}
+                    accept="image/*"
+                    multiple
+                />
+                <button
+                    type="button"
+                    className={styles.attachButton}
+                    onClick={() => fileInputRef.current?.click()}
+                    title="Attach image"
+                    disabled={disabled}
+                    style={{
+                        background: 'none',
+                        border: 'none',
+                        color: '#6b7280',
+                        cursor: 'pointer',
+                        padding: '8px',
+                        display: 'flex',
+                        alignItems: 'center',
+                    }}
+                >
+                    <Paperclip size={18} />
+                </button>
                 <textarea
                     ref={textareaRef}
                     className={styles.input}
-                    placeholder={attachedSelection ? "Ask about this selection..." : "Ask anything about your document... Use @ to mention files"}
+                    placeholder={attachedSelection || selectedImages.length > 0 ? "Ask about this..." : "Ask anything about your document..."}
                     value={value}
                     onChange={handleInputChange}
                     onKeyDown={handleKeyDown}
+                    onPaste={handlePaste}
                     disabled={disabled}
                     rows={1}
                 />

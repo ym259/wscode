@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { WorkspaceProvider, useWorkspace } from '@/contexts/WorkspaceContext';
 import ActivityBar from '@/components/layout/ActivityBar';
 import StatusBar from '@/components/layout/StatusBar';

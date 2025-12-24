@@ -8,8 +8,8 @@
 
 .toolbar {
     min-height: 48px;
-    background: var(--bg-editor);
-    border-bottom: 1px solid var(--border-color);
+    background: #ffffff;
+    border-bottom: 1px solid #e0e0e0;
     overflow-x: auto;
     overflow-y: hidden;
     white-space: nowrap;
@@ -84,46 +84,46 @@
     font-size: var(--font-size-sm);
 }
 
-/* SuperDoc overrides for dark theme */
+/* SuperDoc container background */
 :global(.superdoc-container) {
-    background: var(--bg-editor) !important;
+    background: #f5f5f5 !important;
 }
 
-/* SuperDoc Toolbar overrides for better contrast */
+/* SuperDoc Toolbar - Light theme */
 :global(.sd-toolbar) {
-    background: var(--bg-sidebar) !important;
-    border-bottom: 1px solid var(--border-color) !important;
+    background: #ffffff !important;
+    border-bottom: 1px solid #e0e0e0 !important;
 }
 
 :global(.sd-toolbar button),
 :global(.sd-toolbar .sd-button),
 :global(.sd-toolbar [class*="button"]) {
-    color: var(--text-bright) !important;
+    color: #333333 !important;
 }
 
 :global(.sd-toolbar button:hover),
 :global(.sd-toolbar .sd-button:hover),
 :global(.sd-toolbar [class*="button"]:hover) {
-    background: var(--bg-hover) !important;
+    background: #f0f0f0 !important;
 }
 
 :global(.sd-toolbar svg),
 :global(.sd-toolbar path) {
-    fill: var(--text-bright) !important;
-    stroke: var(--text-bright) !important;
-    color: var(--text-bright) !important;
+    fill: #333333 !important;
+    stroke: #333333 !important;
+    color: #333333 !important;
 }
 
 :global(.sd-toolbar select),
 :global(.sd-toolbar input) {
-    background: var(--bg-input) !important;
-    color: var(--text-bright) !important;
-    border-color: var(--border-color) !important;
+    background: #ffffff !important;
+    color: #333333 !important;
+    border-color: #e0e0e0 !important;
 }
 
 :global(.sd-toolbar .sd-dropdown),
 :global(.sd-toolbar [class*="dropdown"]) {
-    color: var(--text-bright) !important;
+    color: #333333 !important;
 }
 
 :global(.superdoc-editor) {

@@ -1,13 +1,14 @@
 'use client';
 
 import React, { useState, useRef, useCallback, useEffect } from 'react';
-import { X, Sparkles, User, Bot } from 'lucide-react';
+import { X, Sparkles, User, Bot, Mic, MicOff, AlertCircle } from 'lucide-react';
 import { useWorkspace } from '@/contexts/WorkspaceContext';
-import { ToolCall, MessageItem } from '@/types';
+import { ToolCall, MessageItem, AgentEvent, ChatMessage } from '@/types';
 import { ToolCallItem } from './ToolCallItem';
 import { ReasoningItem } from './ReasoningItem';
 import { MentionInput } from './MentionInput';
 import { renderMessageContent } from './renderMessageContent';
+import { useVoiceAgent } from './useVoiceAgent';
 import styles from './AgentPanel.module.css';
 
 interface AgentPanelProps {
@@ -19,8 +20,9 @@ interface AgentPanelProps {
  * AI Assistant panel with chat interface, tool call display, and file mentions
  */
 export default function AgentPanel({ isOpen, onClose }: AgentPanelProps) {
-    const { agentMessages, addMessage, updateMessage, aiActionHandler, rootItems } = useWorkspace();
+    const { agentMessages, addMessage, updateMessage, aiActionHandler, voiceToolHandler, rootItems } = useWorkspace();
     const [inputValue, setInputValue] = useState('');
+    const [selectedImages, setSelectedImages] = useState<string[]>([]);
     const [isLoading, setIsLoading] = useState(false);
     const [isStreaming, setIsStreaming] = useState(false);
     const [streamingMsgId, setStreamingMsgId] = useState<string | null>(null);
@@ -30,25 +32,11 @@ export default function AgentPanel({ isOpen, onClose }: AgentPanelProps) {
         messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     }, []);
 
-    const handleSubmit = useCallback(async (e?: React.FormEvent, messageOverride?: string) => {
-        e?.preventDefault();
-
-        // Use message override if provided, otherwise use inputValue
-        const userMessage = (messageOverride ?? inputValue).trim();
-        if (!userMessage || isLoading) return;
-
-        setInputValue('');
-
-        // Add user message
-        addMessage({
-            role: 'user',
-            content: userMessage,
-        });
-
+    const executeAiAction = useCallback(async (userMessage: string, history: ChatMessage[], images: string[] = []) => {
         setIsLoading(true);
 
         try {
-            console.log('[AgentPanel] handleSubmit userMessage:', userMessage);
+            console.log('[AgentPanel] executeAiAction userMessage:', userMessage);
 
             // If we have an active document with AIActions, use it for document editing
             if (aiActionHandler) {
@@ -68,7 +56,7 @@ export default function AgentPanel({ isOpen, onClose }: AgentPanelProps) {
                 let currentItems: MessageItem[] = [];
                 let currentReasoningId: string | null = null;
 
-                await aiActionHandler(userMessage, agentMessages, (event) => {
+                await aiActionHandler(userMessage, history, (event) => {
                     if (event.type === 'content_delta') {
                         currentContent += event.content;
                         updateMessage(assistantMsgId, { content: currentContent });
@@ -127,7 +115,7 @@ export default function AgentPanel({ isOpen, onClose }: AgentPanelProps) {
                         setIsStreaming(false);
                         setStreamingMsgId(null);
                     }
-                });
+                }, images.length > 0 ? images : undefined);
             } else {
                 // Fallback to regular chat API
                 const response = await fetch('/api/ai', {
@@ -154,13 +142,225 @@ export default function AgentPanel({ isOpen, onClose }: AgentPanelProps) {
             setIsLoading(false);
             scrollToBottom();
         }
-    }, [inputValue, isLoading, addMessage, updateMessage, scrollToBottom, aiActionHandler, agentMessages]);
+    }, [aiActionHandler, addMessage, updateMessage, scrollToBottom]);
+
+    const handleSubmit = useCallback(async (e?: React.FormEvent, messageOverride?: string) => {
+        e?.preventDefault();
+
+        // Use message override if provided, otherwise use inputValue
+        const userMessage = (messageOverride ?? inputValue).trim();
+        if (!userMessage || isLoading) return;
+
+        setInputValue('');
+        const currentImages = [...selectedImages];
+        setSelectedImages([]);
+
+        // Add user message
+        addMessage({
+            role: 'user',
+            content: userMessage,
+            images: currentImages,
+        });
+
+        // Execute AI action with current history
+        // Note: agentMessages here DOES NOT include the new message yet, which matches handleAiAction expectation
+        await executeAiAction(userMessage, agentMessages, currentImages);
+
+    }, [inputValue, selectedImages, isLoading, addMessage, agentMessages, executeAiAction]);
 
     // Scroll to bottom when messages change
     useEffect(() => {
         scrollToBottom();
     }, [agentMessages, scrollToBottom]);
 
+    // Voice delegation handling
+    const voiceRequestResolver = useRef<((response: string) => void) | null>(null);
+
+    // Monitor chat messages to resolve pending voice requests
+    useEffect(() => {
+        // If we have a pending voice request and the agent is done loading
+        if (voiceRequestResolver.current && !isLoading && agentMessages.length > 0) {
+            const lastMsg = agentMessages[agentMessages.length - 1];
+
+            // If the last message is from the assistant, we assume it's the response to our delegated query
+            if (lastMsg.role === 'assistant') {
+                const responseText = lastMsg.content || "Task completed.";
+                console.log('[AgentPanel] Resolving voice request with:', responseText.substring(0, 50));
+                voiceRequestResolver.current(responseText);
+                voiceRequestResolver.current = null;
+            }
+        }
+    }, [agentMessages, isLoading]);
+
+    // Voice agent integration - must be before early return (React rules of hooks)
+    const handleVoiceToolCall = useCallback(async (name: string, args: Record<string, unknown>): Promise<string> => {
+        // Intercept 'askAgent' delegation tool
+        if (name === 'askAgent') {
+            const request = args.request as string;
+            console.log('[AgentPanel] Delegating voice request to text agent:', request);
+
+            // Check if we need to add a message, or if one was already added by transcript
+            const lastMsg = agentMessages[agentMessages.length - 1];
+            const isDuplicate = lastMsg?.role === 'user' && lastMsg.content?.trim() === request.trim();
+
+            let historyToUse = agentMessages;
+
+            if (isDuplicate) {
+                console.log('[AgentPanel] Using existing transcript, skipping message add');
+                // The prompt is already in history, so we valid history is everything BEFORE it
+                historyToUse = agentMessages.slice(0, -1);
+            } else {
+                // Add user message manually
+                addMessage({
+                    role: 'user',
+                    content: request,
+                });
+                // History is just agentMessages (new msg not included yet)
+            }
+
+            // Trigger text agent manually (since addMessage doesn't trigger it automatically)
+            // We don't await this inside the promise, but we kick it off
+            executeAiAction(request, historyToUse).catch(err => {
+                console.error('[AgentPanel] Voice delegation failed:', err);
+                if (voiceRequestResolver.current) {
+                    voiceRequestResolver.current("Failed to execute text agent.");
+                    voiceRequestResolver.current = null;
+                }
+            });
+
+            // Return a promise that resolves when the text agent completes (monitored by useEffect above)
+            return new Promise<string>((resolve) => {
+                // If there's an existing pending request, resolve it immediately (cancel/override)
+                if (voiceRequestResolver.current) {
+                    voiceRequestResolver.current('Request overridden by new input.');
+                }
+                voiceRequestResolver.current = resolve;
+            });
+        }
+
+        // Use the voiceToolHandler from context if available (fallback/legacy)
+        if (voiceToolHandler) {
+            console.log('[AgentPanel] Executing voice tool via context handler:', name, args);
+            return await voiceToolHandler(name, args);
+        }
+        console.warn('[AgentPanel] No voiceToolHandler available, tool call skipped:', name);
+        return `Tool ${name} is not available. Please ensure a document is open.`;
+    }, [voiceToolHandler, addMessage, agentMessages, executeAiAction]);
+
+    // Track current voice assistant message for tool calls
+    const voiceMessageIdRef = useRef<string | null>(null);
+    const voiceMessageItemsRef = useRef<MessageItem[]>([]);
+
+    const handleVoiceEvent = useCallback((event: AgentEvent) => {
+        console.log('[AgentPanel] Voice event:', event);
+
+        // Handle tool events for voice - similar to text chat
+        if (event.type === 'tool_start') {
+            // Create or get voice assistant message
+            if (!voiceMessageIdRef.current) {
+                const msgId = addMessage({
+                    role: 'assistant',
+                    content: '',
+                    items: []
+                });
+                voiceMessageIdRef.current = msgId;
+                voiceMessageItemsRef.current = [];
+            }
+
+            // Add tool call to items
+            const newToolCall: ToolCall = {
+                id: event.id,
+                name: event.name || 'unknown',
+                args: event.args,
+                status: 'running',
+                timestamp: event.timestamp
+            };
+            voiceMessageItemsRef.current = [...voiceMessageItemsRef.current, {
+                type: 'tool_call',
+                data: newToolCall
+            }];
+            updateMessage(voiceMessageIdRef.current, { items: voiceMessageItemsRef.current });
+        } else if (event.type === 'tool_result' && voiceMessageIdRef.current) {
+            // Update tool call with result
+            voiceMessageItemsRef.current = voiceMessageItemsRef.current.map(item =>
+                item.type === 'tool_call' && item.data.id === event.id
+                    ? {
+                        ...item,
+                        data: {
+                            ...item.data,
+                            result: event.result,
+                            status: event.status,
+                            ...(event.args ? { args: event.args } : {})
+                        }
+                    }
+                    : item
+            );
+            updateMessage(voiceMessageIdRef.current, { items: voiceMessageItemsRef.current });
+        }
+    }, [addMessage, updateMessage]);
+
+    const handleVoiceTranscript = useCallback((text: string, isFinal: boolean, role: 'user' | 'assistant') => {
+        if (isFinal && role === 'user') {
+            // Reset voice message tracking for new conversation turn
+            voiceMessageIdRef.current = null;
+            voiceMessageItemsRef.current = [];
+
+            // Add user's spoken message to chat
+            addMessage({
+                role: 'user',
+                content: text,
+            });
+        } else if (isFinal && role === 'assistant') {
+            // If we have an existing voice message with tool calls, update it with the text
+            if (voiceMessageIdRef.current) {
+                updateMessage(voiceMessageIdRef.current, { content: text });
+            } else {
+                // No tool calls, just add the response
+                addMessage({
+                    role: 'assistant',
+                    content: text,
+                });
+            }
+            // Reset for next turn
+            voiceMessageIdRef.current = null;
+            voiceMessageItemsRef.current = [];
+        }
+    }, [addMessage, updateMessage]);
+
+    const {
+        isConnected: voiceConnected,
+        isConnecting: voiceConnecting,
+        isListening: voiceListening,
+        isSpeaking: voiceSpeaking,
+        error: voiceError,
+        toggleSession: toggleVoice,
+    } = useVoiceAgent({
+        onToolCall: handleVoiceToolCall,
+        onEvent: handleVoiceEvent,
+        onTranscript: handleVoiceTranscript,
+        chatHistory: agentMessages,
+    });
+
+    // Determine voice button state
+    const getVoiceButtonClass = () => {
+        const classes = [styles.voiceButton];
+        if (voiceConnecting) classes.push(styles.voiceButtonConnecting);
+        else if (voiceSpeaking) classes.push(styles.voiceButtonSpeaking);
+        else if (voiceListening) classes.push(styles.voiceButtonListening);
+        else if (voiceConnected) classes.push(styles.voiceButtonActive);
+        if (voiceError) classes.push(styles.voiceButtonError);
+        return classes.join(' ');
+    };
+
+    const getVoiceButtonTitle = () => {
+        if (voiceConnecting) return 'Connecting...';
+        if (voiceSpeaking) return 'AI is speaking...';
+        if (voiceListening) return 'Listening...';
+        if (voiceConnected) return 'Voice active - click to stop';
+        return 'Start voice conversation';
+    };
+
+    // Early return AFTER all hooks
     if (!isOpen) return null;
 
     return (
@@ -169,11 +369,33 @@ export default function AgentPanel({ isOpen, onClose }: AgentPanelProps) {
                 <div className={styles.headerTitle}>
                     <Sparkles size={16} className={styles.sparkle} />
                     <span>AI Assistant</span>
+                    <button
+                        className={getVoiceButtonClass()}
+                        onClick={toggleVoice}
+                        title={getVoiceButtonTitle()}
+                        disabled={voiceConnecting}
+                    >
+                        {voiceConnected || voiceConnecting ? <Mic size={14} /> : <MicOff size={14} />}
+                    </button>
+                    {voiceConnected && (
+                        <div className={styles.voiceStatus}>
+                            <span className={styles.voiceStatusDot} />
+                            <span>{voiceListening ? 'Listening' : voiceSpeaking ? 'Speaking' : 'Ready'}</span>
+                        </div>
+                    )}
                 </div>
                 <button className={styles.closeButton} onClick={onClose} title="Close Panel">
                     <X size={16} />
                 </button>
             </div>
+
+            {/* Voice error display */}
+            {voiceError && (
+                <div className={styles.voiceError}>
+                    <AlertCircle size={14} className={styles.voiceErrorIcon} />
+                    <span>{voiceError}</span>
+                </div>
+            )}
 
             <div className={styles.messages}>
                 {agentMessages.length === 0 ? (
@@ -216,6 +438,20 @@ export default function AgentPanel({ isOpen, onClose }: AgentPanelProps) {
                                     <div className={styles.messageRole}>
                                         {message.role === 'user' ? 'You' : 'Assistant'}
                                     </div>
+
+                                    {/* Render attached images */}
+                                    {message.images && message.images.length > 0 && (
+                                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 8 }}>
+                                            {message.images.map((img, idx) => (
+                                                <img
+                                                    key={idx}
+                                                    src={img}
+                                                    alt={`Attached ${idx + 1}`}
+                                                    style={{ maxWidth: 200, maxHeight: 200, borderRadius: 4, objectFit: 'contain', border: '1px solid #e1dfdd' }}
+                                                />
+                                            ))}
+                                        </div>
+                                    )}
 
                                     {/* Render ordered items (reasoning and tool calls) */}
                                     {message.items && message.items.length > 0 && (
@@ -295,6 +531,9 @@ export default function AgentPanel({ isOpen, onClose }: AgentPanelProps) {
                     onSubmit={(msg) => handleSubmit(undefined, msg)}
                     disabled={isLoading}
                     workspaceFiles={rootItems}
+                    selectedImages={selectedImages}
+                    onImageAdd={(imgs) => setSelectedImages(prev => [...prev, ...imgs])}
+                    onImageRemove={(index) => setSelectedImages(prev => prev.filter((_, i) => i !== index))}
                 />
             </form>
         </div>

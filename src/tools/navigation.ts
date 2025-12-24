@@ -64,40 +64,115 @@ export const getNavigationTools = (context: ToolContext): ToolDefinition[] => {
                         }
                     }
 
-                    const results: SearchMatch[] = superdoc.search(searchPattern);
+                    // Check if superdoc has search method (SuperDoc has it, CustomDocEditor doesn't)
+                    if (typeof superdoc?.search === 'function') {
+                        const results: SearchMatch[] = superdoc.search(searchPattern);
 
-                    if (!results || results.length === 0) {
-                        return `No matches found for "${query}".`;
-                    }
+                        if (!results || results.length === 0) {
+                            return `No matches found for "${query}".`;
+                        }
 
-                    // Optionally navigate to a specific result
-                    if (goToResult !== undefined && goToResult >= 0 && goToResult < results.length) {
-                        superdoc.goToSearchResult(results[goToResult]);
-                    }
+                        // Optionally navigate to a specific result
+                        if (goToResult !== undefined && goToResult >= 0 && goToResult < results.length) {
+                            superdoc.goToSearchResult(results[goToResult]);
+                        }
 
-                    // Format results for the agent
-                    const formattedResults = results.slice(0, 20).map((match, index) => ({
-                        index,
-                        text: match.text.length > 100 ? match.text.substring(0, 100) + '...' : match.text,
-                        position: { from: match.from, to: match.to }
-                    }));
+                        // Format results for the agent
+                        const formattedResults = results.slice(0, 20).map((match, index) => ({
+                            index,
+                            text: match.text.length > 100 ? match.text.substring(0, 100) + '...' : match.text,
+                            position: { from: match.from, to: match.to }
+                        }));
 
-                    let response = `Found ${results.length} match${results.length === 1 ? '' : 'es'} for "${query}":\n\n`;
-                    formattedResults.forEach(result => {
-                        response += `[${result.index}] "${result.text}" (position: ${result.position.from}-${result.position.to})\n`;
-                    });
+                        let response = `Found ${results.length} match${results.length === 1 ? '' : 'es'} for "${query}":\n\n`;
+                        formattedResults.forEach(result => {
+                            response += `[${result.index}] "${result.text}" (position: ${result.position.from}-${result.position.to})\n`;
+                        });
 
-                    if (results.length > 20) {
-                        response += `\n... and ${results.length - 20} more matches.`;
-                    }
+                        if (results.length > 20) {
+                            response += `\n... and ${results.length - 20} more matches.`;
+                        }
 
-                    if (goToResult !== undefined) {
-                        response += `\n\nNavigated to result #${goToResult}.`;
+                        if (goToResult !== undefined) {
+                            response += `\n\nNavigated to result #${goToResult}.`;
+                        } else {
+                            response += '\n\nTip: Use goToResult parameter to navigate to a specific match.';
+                        }
+
+                        return response;
                     } else {
-                        response += '\n\nTip: Use goToResult parameter to navigate to a specific match.';
-                    }
+                        // Fallback for CustomDocEditor: use TipTap editor with full regex support
+                        const { getEditor } = context;
+                        const editor = getEditor?.();
 
-                    return response;
+                        if (!editor?.state?.doc) {
+                            return `Search is not available in this editor. Use readDocument to read the content and search manually.`;
+                        }
+
+                        // Get text content from the document
+                        const textContent = editor.state.doc.textContent || '';
+
+                        // Build search pattern - supports both regex and plain text
+                        let regex: RegExp;
+                        if (isRegex && searchPattern instanceof RegExp) {
+                            regex = searchPattern;
+                        } else {
+                            // Escape special regex characters for literal search
+                            const escaped = query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                            const flags = caseInsensitive !== false ? 'gi' : 'g';
+                            regex = new RegExp(escaped, flags);
+                        }
+
+                        // Find all matches with regex
+                        const matches: Array<{ index: number; text: string; context: string; from: number; to: number }> = [];
+                        let match: RegExpExecArray | null;
+
+                        while ((match = regex.exec(textContent)) !== null) {
+                            const foundAt = match.index;
+                            const matchedText = match[0];
+
+                            // Get context around the match (50 chars each side)
+                            const contextStart = Math.max(0, foundAt - 50);
+                            const contextEnd = Math.min(textContent.length, foundAt + matchedText.length + 50);
+                            const context = textContent.slice(contextStart, contextEnd);
+
+                            matches.push({
+                                index: matches.length,
+                                text: matchedText,
+                                context: (contextStart > 0 ? '...' : '') + context + (contextEnd < textContent.length ? '...' : ''),
+                                from: foundAt,
+                                to: foundAt + matchedText.length
+                            });
+
+                            // Prevent infinite loops on zero-width matches
+                            if (matchedText.length === 0) {
+                                regex.lastIndex++;
+                            }
+
+                            // Limit results
+                            if (matches.length >= 50) break;
+                        }
+
+                        if (matches.length === 0) {
+                            return `No matches found for "${query}"${isRegex ? ' (regex)' : ''}.`;
+                        }
+
+                        // Format results similar to SuperDoc
+                        const displayMatches = matches.slice(0, 20);
+                        let response = `Found ${matches.length}${matches.length >= 50 ? '+' : ''} match${matches.length === 1 ? '' : 'es'} for "${query}"${isRegex ? ' (regex)' : ''}:\n\n`;
+
+                        displayMatches.forEach(m => {
+                            response += `[${m.index}] "${m.text}" at ${m.from}-${m.to}\n    Context: "${m.context}"\n`;
+                        });
+
+                        if (matches.length > 20) {
+                            response += `\n... and ${matches.length - 20} more matches.`;
+                        }
+
+                        response += '\n\nTip: Use isRegex: true for regex patterns like "section \\\\d+" or "第\\\\d+条"';
+
+                        return response;
+                    }
                 } catch (error) {
                     console.error('[searchDocument] Error:', error);
                     return `Error searching document: ${error instanceof Error ? error.message : 'Unknown error'}`;
