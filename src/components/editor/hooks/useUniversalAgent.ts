@@ -9,293 +9,17 @@
  * @module components/editor/hooks/useUniversalAgent
  */
 
-import { useEffect, useRef, useState, useCallback, RefObject } from 'react';
-import { SuperDoc } from '@harbour-enterprises/superdoc';
+import { useEffect, useRef, useState, useCallback } from 'react';
 import { AIActions, createAIProvider } from '@superdoc-dev/ai';
-import { ChatMessage, AgentEvent, FileSystemItem } from '@/types';
-import {
-    ToolContext,
-    ToolDefinition,
-    getContentTools,
-    getFormattingTools,
-    getNavigationTools,
-    getBlockTools,
-    getSpreadsheetTools
-} from '@/tools';
+import { ChatMessage, AgentEvent } from '@/types';
 
-/** Supported file types for the agent */
-export type FileType = 'docx' | 'xlsx' | 'txt' | 'pdf' | null;
+import { UniversalAgentConfig } from './universal-agent/types';
+import { detectFileType, buildToolContext } from './universal-agent/context';
+import { getToolsForFileType } from './universal-agent/tools';
+import { buildSystemPrompt } from './universal-agent/prompts';
 
-/** Configuration for universal agent */
-export interface UniversalAgentConfig {
-    /** Reference to SuperDoc instance (for DOCX editing in main app) */
-    superdocRef?: RefObject<SuperDoc | null>;
-    /** Reference to CustomDocEditor instance (alternative to SuperDoc for editorv2) */
-    customEditorRef?: RefObject<any>;
-    /** Whether the editor is ready */
-    isReady: boolean;
-    /** Active file path */
-    activeFilePath?: string;
-    /** Active file type */
-    activeFileType?: FileType;
-    /** Active file handle (for direct file access) */
-    activeFileHandle?: FileSystemFileHandle;
-    /** Workspace files for cross-file access */
-    workspaceFiles?: FileSystemItem[];
-    /** Handler setter from WorkspaceContext */
-    setAIActionHandler: (handler: any) => void;
-    /** Voice tool handler setter from WorkspaceContext */
-    setVoiceToolHandler?: (handler: ((name: string, args: Record<string, unknown>) => Promise<string>) | null) => void;
-    /** XLSX specific: callback for live cell updates */
-    setCellValue?: (cell: string, value: string | number, sheetName?: string, isNumber?: boolean) => void;
-    /** Callback to open a file in the editor (switches active file) */
-    openFileInEditor?: (path: string) => Promise<boolean>;
-}
-
-/**
- * Detect file type from path
- */
-function detectFileType(path?: string): FileType {
-    if (!path) return null;
-    const lower = path.toLowerCase();
-    if (lower.endsWith('.docx') || lower.endsWith('.doc')) return 'docx';
-    if (lower.endsWith('.xlsx') || lower.endsWith('.xls')) return 'xlsx';
-    if (lower.endsWith('.pdf')) return 'pdf';
-    if (lower.endsWith('.txt') || lower.endsWith('.md')) return 'txt';
-    return null;
-}
-
-/**
- * Build tool context for the agent
- */
-function buildToolContext(
-    config: UniversalAgentConfig,
-    aiActions?: AIActions | null
-): ToolContext {
-    const { superdocRef, customEditorRef, workspaceFiles, activeFilePath, activeFileHandle, setCellValue, openFileInEditor } = config;
-
-    // Helper to get TipTap editor from SuperDoc or CustomDocEditor
-    const getEditor = () => {
-        // Try CustomDocEditor first (if provided)
-        if (customEditorRef?.current) {
-            const ce = customEditorRef.current;
-            return ce.editor || ce.getEditor?.() || ce;
-        }
-        // Fall back to SuperDoc
-        if (!superdocRef?.current) return null;
-        const sd = superdocRef.current as any;
-        return sd.activeEditor || sd.editor || sd.getEditor?.() || sd._editor;
-    };
-
-    // Helper to get AIActions methods (only available with SuperDoc)
-    const getActionMethods = () => aiActions ? (aiActions as any).action : ({} as any);
-
-    return {
-        getActionMethods,
-        getEditor,
-        workspaceFiles,
-        activeFilePath,
-        activeFileHandle,
-        // Expose superdoc or custom editor as 'superdoc' for compatibility
-        superdoc: superdocRef?.current || customEditorRef?.current || ({} as any),
-        setCellValue,
-        openFileInEditor
-    };
-}
-
-/**
- * Get tools based on file type
- * 
- * - Read tools: Always available for all file types
- * - Write tools: Available based on what file types are open
- */
-function getToolsForFileType(context: ToolContext, activeFileType: FileType): ToolDefinition[] {
-    const tools: ToolDefinition[] = [];
-
-    // READ TOOLS: Always available (can read any file in workspace)
-    tools.push(...getNavigationTools(context));        // readFile, searchDocument
-    tools.push(...getSpreadsheetTools(context));       // listSpreadsheetSheets
-
-    // WRITE TOOLS: Based on active file type
-    if (activeFileType === 'docx') {
-        tools.push(...getContentTools(context));       // insertTrackedChanges, literalReplace, insertTable, etc.
-        tools.push(...getFormattingTools(context));    // toggleHeading, toggleBold, etc.
-        tools.push(...getBlockTools(context));         // readDocument, deleteBlock, etc.
-    }
-
-    if (activeFileType === 'xlsx') {
-        // Filter content tools for xlsx-specific ones
-        const contentTools = getContentTools(context);
-        const xlsxWriteTools = contentTools.filter(t =>
-            ['editSpreadsheet'].includes(t.function.name)
-        );
-        tools.push(...xlsxWriteTools);
-    }
-
-    return tools;
-}
-
-/**
- * Build system prompt based on file type and context
- */
-function buildSystemPrompt(config: UniversalAgentConfig, docStats?: { charCount: number; blockCount: number; estimatedPages: number }): string {
-    const { activeFilePath, activeFileType, workspaceFiles } = config;
-
-    // List workspace files for context
-    const collectFiles = (items: FileSystemItem[], prefix = ''): string[] => {
-        const files: string[] = [];
-        for (const item of items) {
-            if (item.type === 'file') {
-                files.push(`${prefix}${item.name}`);
-            } else if (item.children) {
-                files.push(...collectFiles(item.children, `${prefix}${item.name}/`));
-            }
-        }
-        return files;
-    };
-    const workspaceFileList = workspaceFiles ? collectFiles(workspaceFiles).slice(0, 20).join(', ') : 'No files';
-
-    let prompt = `You are an intelligent document assistant with full workspace access.
-
-# Current Context
-**ACTIVE FILE: ${activeFilePath ? `"${activeFilePath}"` : 'None'}** (${activeFileType || 'unknown'})
-${activeFilePath ? `You can READ any file, but can only WRITE to "${activeFilePath}".` : 'No file is active - open a file to enable editing.'}
-
-Workspace Files: ${workspaceFileList}${workspaceFiles && workspaceFiles.length > 20 ? '...' : ''}
-`;
-
-    // Add file-type specific capabilities
-    if (activeFileType === 'docx' && docStats) {
-        const isLargeDoc = docStats.estimatedPages > 5;
-        prompt += `
-Document Stats: ~${docStats.charCount.toLocaleString()} chars, ${docStats.estimatedPages} pages, ${docStats.blockCount} blocks
-
-# Capabilities
-
-## Reading (any file)
-- \`readFile(path)\`: Read any file. For xlsx, use \`sheets\` param.
-- \`listSpreadsheetSheets(path)\`: List sheets in xlsx before reading.
-- \`searchDocument(query)\`: Search in active document.
-- \`readDocument()\`: Read active document structure with block IDs.
-
-## Writing DOCX (active file)
-- \`editText({ find, replace?, bold?, italic?, headingLevel? })\`: Find text, replace + style
-  - When the user instruct to change something specifically, only change that part. (e.g. when asked to remove "X" from title, only remove "X" without changing the headings etc)
-  - Usage example:
-    - Markdown heading: \`editText({ find: "## Title", replace: "Title", headingLevel: 2 })\`
-    - Markdown bold: \`editText({ find: "**text**", replace: "text", bold: true })\`
-- \`insertTrackedChanges(instruction)\`: AI-powered edits with track changes
-- \`literalReplace(find, replace)\`: Exact text replacement
-- \`insertTable(headers, rows)\`: Insert table
-- \`deleteBlock(blockId)\`: Remove block (requires readDocument first)
-- Formatting: \`toggleHeading\`, \`toggleBold\`, \`setFontSize\`, etc.
-
-## Markdown Conversion Guidelines
-When converting markdown to Word styles:
-1. **Headings**: Use \`editText({ find: "## Heading Text", replace: "Heading Text", headingLevel: 2 })\`
-   - MUST include \`replace\` without the "#" symbols!
-2. **Bold**: Use \`editText({ find: "**bold text**", replace: "bold text", bold: true })\`
-3. **Italic**: Use \`editText({ find: "*italic*", replace: "italic", italic: true })\`
-4. **Tables**: 
-   - First \`insertTable\` with the data
-   - Then delete ALL markdown table lines: header row "| Col1 | Col2 |", divider "|---|---|", and ALL data rows
-   - Use \`literalReplace\` to find and replace each markdown table line with empty string
-   - OR use \`deleteBlock\` for each line's block ID (get from readDocument)
-
-
-# Strategy
-${isLargeDoc
-                ? '- Large doc: Use searchDocument first, then readDocument with range.'
-                : '- Small doc: Can use readDocument() for full content.'}
-- For deletions: ALWAYS get sdBlockId via readDocument first.
-- After list operations: Call fixOrderedListNumbering.
-
-# IMPORTANT: Be Proactive!
-- When asked to edit/convert/format, IMMEDIATELY read the document first using \`readDocument()\`
-- DO NOT ask clarifying questions if the task is clear
-- The user expects you to see and edit their document directly
-- Take action first, then report what you did
-
-# Cross-File Workflow
-If asked to write data from one file (e.g., xlsx) to another file (e.g., docx):
-1. READ the source file first to get the data
-2. Call \`openFile("target-file.docx")\` to switch to the target
-3. Tell the user: "I've read the data and opened [target file]. Ready to insert the content. Should I proceed?"
-4. On user confirmation, continue with the edit using the now-available write tools
-`;
-    } else if (activeFileType === 'xlsx') {
-        prompt += `
-# Capabilities
-
-## Reading (any file)
-- \`listSpreadsheetSheets(path)\`: List sheets with dimensions
-- \`readFile(path, { sheets })\`: Read specific sheets (default: first sheet only)
-
-## Writing XLSX (active file)
-- \`editSpreadsheet({ edits })\`: Edit individual cells
-  - Example: \`editSpreadsheet({ edits: [{ cell: "A1", value: "Hello" }] })\`
-- \`insertRow({ data, rowIndex? })\`: Insert row with data at position or end
-  - Example: \`insertRow({ data: ["Col A", "Col B", "Col C"], rowIndex: 5 })\`
-- \`deleteRow({ rowIndex })\`: Clear a row's data
-  - Example: \`deleteRow({ rowIndex: 3 })\`
-
-# Strategy for Large Spreadsheets
-1. Call \`listSpreadsheetSheets\` to see available sheets
-2. Call \`readFile({ sheets: ["SheetName"] })\` to read specific sheet(s)
-3. Default reads only first sheet to avoid data overload
-
-# Cross-File Workflow
-If asked to write data to a DOCX file while viewing this XLSX:
-1. READ the data you need from this spreadsheet
-2. Call \`openFile("target-file.docx")\` to switch to the DOCX
-3. Tell the user: "I've read the data and opened [target file]. Ready to insert. Should I proceed?"
-4. On user confirmation, you'll have DOCX write tools available to complete the task
-`;
-    } else {
-        prompt += `
-# Capabilities
-
-## Reading (any file)
-- \`readFile(path)\`: Read any workspace file
-- \`listSpreadsheetSheets(path)\`: For xlsx files, list sheets first
-
-Note: No active editable file. Open a DOCX or XLSX to enable editing.
-`;
-    }
-
-    prompt += `
-# Parallel Tool Execution
-You have parallel tool calling enabled. To maximize efficiency:
-- **Batch independent operations**: If you need to read multiple files, call \`readFile\` for all of them simultaneously
-- **Parallelize independent edits**: Multiple \`editText\` or \`literalReplace\` calls that don't depend on each other should be made in parallel
-- **Read before write**: Read operations should complete before dependent writes, but independent reads can run together
-- **Example**: To read 3 files → call all 3 \`readFile\` at once, not sequentially
-
-# Task Completion (CRITICAL)
-**You MUST complete ALL tasks before stopping.** Do NOT:
-- List "remaining tasks" and then stop
-- Say "the following still needs to be done" without doing it
-- Stop after partial completion
-
-If a task has multiple steps:
-1. Execute ALL steps, not just some
-2. If you identify remaining work, IMMEDIATELY continue with tool calls
-3. Only stop when EVERYTHING is done
-4. Your final message should confirm completion, not list TODOs
-
-**WRONG**: "I've done X. Remaining tasks: Y, Z" → then stopping
-**CORRECT**: Do X, then Y, then Z → "All tasks completed: X, Y, Z"
-
-# Important Rules
-- You can READ any file in the workspace
-- You can WRITE only to the active file
-- To write to a different file, use \`openFile(path)\` first
-- Always confirm with user before proceeding with cross-file edits
-- Focus on the user intent and verify the result. Accurate and concise action is appreciated rather than verbose and unnecessary / excessive actions.
-`;
-
-    return prompt;
-}
+// Re-export types for consumers
+export type { UniversalAgentConfig, FileType } from './universal-agent/types';
 
 /**
  * Universal Agent Hook
@@ -472,8 +196,8 @@ export function useUniversalAgent(config: UniversalAgentConfig) {
 
             console.log('[UniversalAgent] handleAiAction called, fileType:', activeFileType);
 
-            // Truncate tool output helper
-            const truncateToolOutput = (content: string, maxLength: number = 1000) => {
+            // Truncate tool output helper - increased for long document handling
+            const truncateToolOutput = (content: string, maxLength: number = 20000) => {
                 if (content.length <= maxLength) return content;
                 return content.substring(0, maxLength) + `... [Output truncated, length: ${content.length}]`;
             };
@@ -540,9 +264,9 @@ export function useUniversalAgent(config: UniversalAgentConfig) {
                 strict: false
             }));
 
-            // ReAct Loop
+            // ReAct Loop - increased for comprehensive contract review tasks
             let loopCount = 0;
-            const MAX_LOOPS = 50;
+            const MAX_LOOPS = 200;
 
             let previousResponseId: string | undefined;
 
@@ -775,4 +499,3 @@ export function useUniversalAgent(config: UniversalAgentConfig) {
 
     return { isAiInitialized, activeFileType };
 }
-

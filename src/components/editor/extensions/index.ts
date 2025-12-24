@@ -131,10 +131,25 @@ export const CustomParagraph = Paragraph.extend({
                     if (!attributes.lineHeight) {
                         return {};
                     }
-                    // Convert DOCX line height (twips / 240) to decimal line-height
-                    // e.g., 275 / 240 = 1.146
+                    // DOCX line height: w:line value is in 240ths of a line
+                    // w:lineRule="auto" means: value / 240 = line height multiplier
+                    // e.g., 275 / 240 = 1.146 (representing "Multiple 1.15" in Word)
+                    //
+                    // IMPORTANT: Word's "Multiple" spacing multiplies the font's NATURAL line height,
+                    // not the font-size. For Japanese fonts, natural line-height is typically ~1.5x font-size.
+                    // CSS line-height multiplies font-size directly.
+                    //
+                    // To match Word: cssLineHeight = (docxMultiplier) * (naturalLineHeight / fontSize)
+                    // For most fonts, naturalLineHeight ≈ 1.2 to 1.5 times fontSize.
+                    // For Hiragino Mincho ProN at 16px, natural is 24px (1.5 ratio).
+                    //
+                    // So: cssLineHeight = (275/240) * 1.3 ≈ 1.49 (using a middle ground factor)
                     const lineValue = parseInt(attributes.lineHeight);
-                    const cssLineHeight = lineValue / 240;
+                    const docxMultiplier = lineValue / 240;
+                    // Word's "Multiple" line spacing multiplies the font's natural height (~1.3x),
+                    // not just the font-size. Apply this factor to match Word's rendering.
+                    const baseLineFactor = 1.3;
+                    const cssLineHeight = docxMultiplier * baseLineFactor;
                     return {
                         'data-line-height': attributes.lineHeight,
                         style: `line-height: ${cssLineHeight.toFixed(3)};`,
@@ -249,6 +264,7 @@ export const InsertionMark = Mark.create({
         return {
             author: { default: 'Unknown' },
             date: { default: '' },
+            comment: { default: '' },
         };
     },
 
@@ -261,6 +277,7 @@ export const InsertionMark = Mark.create({
             class: 'track-change-insertion',
             'data-author': HTMLAttributes.author,
             'data-date': HTMLAttributes.date,
+            'data-comment': HTMLAttributes.comment,
         }, 0];
     },
 });
@@ -273,6 +290,7 @@ export const DeletionMark = Mark.create({
         return {
             author: { default: 'Unknown' },
             date: { default: '' },
+            comment: { default: '' },
         };
     },
 
@@ -285,6 +303,7 @@ export const DeletionMark = Mark.create({
             class: 'track-change-deletion',
             'data-author': HTMLAttributes.author,
             'data-date': HTMLAttributes.date,
+            'data-comment': HTMLAttributes.comment,
         }, 0];
     },
 });

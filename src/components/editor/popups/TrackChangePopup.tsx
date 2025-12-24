@@ -10,6 +10,7 @@ export interface TrackChangePopupData {
     author: string;
     date: string;
     content: string;
+    comment?: string;
     element: HTMLElement | null;
 }
 
@@ -120,7 +121,11 @@ export const TrackChangePopup: React.FC<TrackChangePopupProps> = ({
                         {data.author}
                     </div>
                     <div style={{ fontSize: '11px', color: '#aaa' }}>
-                        {data.type === 'insertion' ? '追加しました' : '削除しました'}: {data.content}
+                        {data.comment ? (
+                            <span style={{ color: '#FFC107', fontStyle: 'italic' }}>{data.comment}</span>
+                        ) : (
+                            `${data.type === 'insertion' ? '追加しました' : '削除しました'}: ${data.content}`
+                        )}
                     </div>
                 </div>
             </div>

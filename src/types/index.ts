@@ -32,10 +32,19 @@ export interface ToolCall {
     timestamp: number;
 }
 
+// Search result match from searchDocument tool
+export interface SearchMatch {
+    blockIndex: number;
+    text: string;
+    relevance: number;
+    reason: string;
+}
+
 // Union type for ordered message items (can be reasoning or tool call)
 export type MessageItem =
     | { type: 'reasoning'; id: string; content: string }
-    | { type: 'tool_call'; data: ToolCall };
+    | { type: 'tool_call'; data: ToolCall }
+    | { type: 'search_results'; id: string; matches: SearchMatch[]; query: string };
 
 export interface ChatMessage {
     id: string;

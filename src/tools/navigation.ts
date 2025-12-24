@@ -13,8 +13,8 @@ export const getNavigationTools = (context: ToolContext): ToolDefinition[] => {
 
     return [
         createTool(
-            'searchDocument',
-            'Search for text in the currently active document. Use this to find specific content without reading the entire document. Returns matching text with position information. Useful when you need to find where specific content appears.',
+            'keywordSearch',
+            'Search for text using exact match or regex. Use this for finding specific strings like "Section 1.2" or regex patterns. Faster than searchDocument but requires exact phrasing.',
             {
                 type: 'object',
                 properties: {
@@ -149,8 +149,8 @@ export const getNavigationTools = (context: ToolContext): ToolDefinition[] => {
                                 regex.lastIndex++;
                             }
 
-                            // Limit results
-                            if (matches.length >= 50) break;
+                            // Limit results - increased for comprehensive contract review
+                            if (matches.length >= 200) break;
                         }
 
                         if (matches.length === 0) {

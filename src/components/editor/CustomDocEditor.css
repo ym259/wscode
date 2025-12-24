@@ -7,10 +7,10 @@
     /* Match Word's default font for this document: HiraMinProN-W3 at 12pt (24 half-points) */
     font-family: "Hiragino Mincho ProN", "Hiragino Mincho Pro", "Yu Mincho", "YuMincho", "MS PMincho", "MS Mincho", serif;
     font-size: 12pt;
-    /* w:sz w:val="24" = 12pt */
+    /* Let document specify line-height via inline styles; fallback to Word's default "Multiple 1.15" */
     line-height: 1.15;
-    /* Word's default "Multiple 1.15" line spacing */
-    letter-spacing: 0.02em;
+    /* Match Word's default letter-spacing (calibrated to 0.015em to force Line 1 wrapping) */
+    letter-spacing: 0.015em;
     /* Reset any browser defaults */
     word-spacing: normal;
 }
@@ -18,8 +18,7 @@
 .ProseMirror p {
     margin-bottom: 0;
     margin-top: 0;
-    /* Use line spacing from document: w:line="275" w:lineRule="auto" - 275/240 ≈ 1.146 */
-    line-height: 1.15;
+    /* Inherit line-height from inline style if set, otherwise use parent default */
     font-size: 12pt;
 }
 
@@ -81,7 +80,8 @@
 .ProseMirror ul,
 .ProseMirror ol {
     padding-left: 1.5em;
-    margin: 0.5em 0;
+    margin: 0;
+    /* Remove extra margins to match Word */
 }
 
 .ProseMirror ul {

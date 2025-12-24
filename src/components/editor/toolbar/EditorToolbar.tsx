@@ -5,10 +5,13 @@ import { Editor } from '@tiptap/react';
 import {
     Bold, Italic, Underline, Undo2, Redo2,
     AlignLeft, AlignCenter, AlignRight, AlignJustify,
-    List, ListOrdered, Grid3x3, Image as ImageIcon, Ruler
+    List, ListOrdered, Grid3x3, Image as ImageIcon, Ruler, FileText,
+    IndentIncrease, IndentDecrease, TextQuote
 } from 'lucide-react';
 import { ToolbarButton } from './ToolbarButton';
 import { ColorPicker } from './ColorPicker';
+import { PageLayoutDialog } from './PageLayoutDialog';
+import { LineSpacingPicker } from './LineSpacingPicker';
 import type { TrackChangesDisplayMode } from '../CustomDocEditor';
 
 interface EditorToolbarProps {
@@ -18,6 +21,11 @@ interface EditorToolbarProps {
     onImageUpload: (e: React.ChangeEvent<HTMLInputElement>) => void;
     trackChangesDisplayMode: TrackChangesDisplayMode;
     onTrackChangesDisplayModeChange: (mode: TrackChangesDisplayMode) => void;
+    docAttrs?: any;
+    onPageLayoutChange?: (updates: {
+        pageSize?: { width: number; height: number };
+        pageMargins?: { top: number; right: number; bottom: number; left: number };
+    }) => void;
 }
 
 /**
@@ -30,11 +38,29 @@ export const EditorToolbar: React.FC<EditorToolbarProps> = ({
     onImageUpload,
     trackChangesDisplayMode,
     onTrackChangesDisplayModeChange,
+    docAttrs,
+    onPageLayoutChange,
 }) => {
     const [showTextColorPicker, setShowTextColorPicker] = useState(false);
     const [showHighlightColorPicker, setShowHighlightColorPicker] = useState(false);
     const [showTablePicker, setShowTablePicker] = useState(false);
     const [tableHoverSize, setTableHoverSize] = useState({ rows: 0, cols: 0 });
+    const [showPageLayoutDialog, setShowPageLayoutDialog] = useState(false);
+    const [showLineSpacingPicker, setShowLineSpacingPicker] = useState(false);
+
+    // Indent/outdent functions
+    const handleIndent = () => {
+        if (!editor) return;
+        const currentIndent = parseInt(editor.getAttributes('paragraph').indent) || 0;
+        editor.chain().focus().updateAttributes('paragraph', { indent: currentIndent + 720 }).run(); // 720 twips = 0.5 inch
+    };
+
+    const handleOutdent = () => {
+        if (!editor) return;
+        const currentIndent = parseInt(editor.getAttributes('paragraph').indent) || 0;
+        const newIndent = Math.max(0, currentIndent - 720);
+        editor.chain().focus().updateAttributes('paragraph', { indent: newIndent || null }).run();
+    };
 
     return (
         <div style={{
@@ -137,6 +163,60 @@ export const EditorToolbar: React.FC<EditorToolbarProps> = ({
                         onClick={() => editor?.chain().focus().toggleOrderedList().run()}
                         isActive={editor?.isActive('orderedList') ?? false}
                     />
+                </div>
+
+                {/* Indent & Line Spacing Group */}
+                <div style={{ display: 'flex', gap: '2px', padding: '0 8px', borderRight: '1px solid #e5e7eb', alignItems: 'center' }}>
+                    <ToolbarButton
+                        icon={IndentDecrease}
+                        label="インデントを減らす"
+                        onClick={handleOutdent}
+                        isActive={false}
+                    />
+                    <ToolbarButton
+                        icon={IndentIncrease}
+                        label="インデントを増やす"
+                        onClick={handleIndent}
+                        isActive={false}
+                    />
+                    {/* Line Spacing Button with Dropdown */}
+                    <div style={{ position: 'relative' }}>
+                        <button
+                            onClick={() => {
+                                setShowLineSpacingPicker(!showLineSpacingPicker);
+                                setShowTextColorPicker(false);
+                                setShowHighlightColorPicker(false);
+                                setShowTablePicker(false);
+                            }}
+                            style={{
+                                width: '28px',
+                                height: '28px',
+                                padding: '4px',
+                                border: '1px solid transparent',
+                                borderRadius: '4px',
+                                cursor: 'pointer',
+                                backgroundColor: showLineSpacingPicker ? '#e5e7eb' : 'transparent',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                transition: 'all 0.1s',
+                            }}
+                            onMouseEnter={e => {
+                                if (!showLineSpacingPicker) e.currentTarget.style.backgroundColor = '#f3f4f6';
+                            }}
+                            onMouseLeave={e => {
+                                if (!showLineSpacingPicker) e.currentTarget.style.backgroundColor = 'transparent';
+                            }}
+                            title="行間"
+                        >
+                            <TextQuote size={16} color="#374151" />
+                        </button>
+                        <LineSpacingPicker
+                            isOpen={showLineSpacingPicker}
+                            onClose={() => setShowLineSpacingPicker(false)}
+                            editor={editor}
+                        />
+                    </div>
                 </div>
 
                 {/* Font Family & Size Group */}
@@ -407,6 +487,12 @@ export const EditorToolbar: React.FC<EditorToolbarProps> = ({
                         icon={Ruler}
                         label={showRuler ? "Hide Ruler" : "Show Ruler"}
                     />
+                    <ToolbarButton
+                        isActive={showPageLayoutDialog}
+                        onClick={() => setShowPageLayoutDialog(true)}
+                        icon={FileText}
+                        label="ページ設定"
+                    />
 
                     <div style={{ width: '1px', height: '24px', backgroundColor: '#e5e7eb', margin: '0 8px' }} />
 
@@ -432,6 +518,16 @@ export const EditorToolbar: React.FC<EditorToolbarProps> = ({
                     </div>
                 </div>
             </div>
+
+            {/* Page Layout Dialog */}
+            {onPageLayoutChange && (
+                <PageLayoutDialog
+                    isOpen={showPageLayoutDialog}
+                    onClose={() => setShowPageLayoutDialog(false)}
+                    docAttrs={docAttrs}
+                    onApply={onPageLayoutChange}
+                />
+            )}
         </div>
     );
 };

@@ -9,6 +9,7 @@ import { ReasoningItem } from './ReasoningItem';
 import { MentionInput } from './MentionInput';
 import { renderMessageContent } from './renderMessageContent';
 import { useVoiceAgent } from './useVoiceAgent';
+import { SearchResultsNavigation } from './SearchResultsNavigation';
 import styles from './AgentPanel.module.css';
 
 interface AgentPanelProps {
@@ -27,6 +28,9 @@ export default function AgentPanel({ isOpen, onClose }: AgentPanelProps) {
     const [isStreaming, setIsStreaming] = useState(false);
     const [streamingMsgId, setStreamingMsgId] = useState<string | null>(null);
     const messagesEndRef = useRef<HTMLDivElement>(null);
+
+    // Track current search navigation index per message (key: message id)
+    const [searchNavState, setSearchNavState] = useState<Record<string, number>>({});
 
     const scrollToBottom = useCallback(() => {
         messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -95,6 +99,33 @@ export default function AgentPanel({ isOpen, onClose }: AgentPanelProps) {
                         }];
                         updateMessage(assistantMsgId, { items: currentItems });
                     } else if (event.type === 'tool_result') {
+                        // Check for search results and add as inline item
+                        try {
+                            if (typeof event.result === 'string') {
+                                const parsed = JSON.parse(event.result);
+                                if (parsed && parsed._action === 'search_results' && Array.isArray(parsed.matches)) {
+                                    console.log('[AgentPanel] Received search results:', parsed.matches.length);
+                                    // Add search results as a new item in the message
+                                    currentItems = [...currentItems, {
+                                        type: 'search_results',
+                                        id: `search_${Date.now()}`,
+                                        matches: parsed.matches,
+                                        query: parsed.query || ''
+                                    }];
+                                    updateMessage(assistantMsgId, { items: currentItems });
+
+                                    // Auto-scroll to first result if available
+                                    if (parsed.matches.length > 0 && voiceToolHandler) {
+                                        const firstMatch = parsed.matches[0];
+                                        voiceToolHandler('scrollToBlock', { blockIndex: firstMatch.blockIndex, matchText: firstMatch.text })
+                                            .catch(e => console.error('Auto-scroll failed:', e));
+                                    }
+                                }
+                            }
+                        } catch (e) {
+                            // Ignore parse errors
+                        }
+
                         // Update the tool call with result
                         currentItems = currentItems.map(item =>
                             item.type === 'tool_call' && item.data.id === event.id
@@ -397,6 +428,8 @@ export default function AgentPanel({ isOpen, onClose }: AgentPanelProps) {
                 </div>
             )}
 
+            {/* Search navigation is now rendered inline within messages */}
+
             <div className={styles.messages}>
                 {agentMessages.length === 0 ? (
                     <div className={styles.emptyState}>
@@ -453,7 +486,7 @@ export default function AgentPanel({ isOpen, onClose }: AgentPanelProps) {
                                         </div>
                                     )}
 
-                                    {/* Render ordered items (reasoning and tool calls) */}
+                                    {/* Render ordered items (reasoning, tool calls, and search results) */}
                                     {message.items && message.items.length > 0 && (
                                         <div className={styles.toolCalls}>
                                             {message.items.map((item, idx) => {
@@ -467,6 +500,45 @@ export default function AgentPanel({ isOpen, onClose }: AgentPanelProps) {
                                                     );
                                                 } else if (item.type === 'tool_call') {
                                                     return <ToolCallItem key={item.data.id} tool={item.data} />;
+                                                } else if (item.type === 'search_results' && item.matches.length > 0) {
+                                                    const currentIndex = searchNavState[item.id] || 0;
+                                                    return (
+                                                        <SearchResultsNavigation
+                                                            key={item.id}
+                                                            results={item.matches}
+                                                            currentIndex={currentIndex}
+                                                            onNext={() => {
+                                                                const nextIndex = (currentIndex + 1) % item.matches.length;
+                                                                setSearchNavState(prev => ({ ...prev, [item.id]: nextIndex }));
+                                                                if (voiceToolHandler) {
+                                                                    const match = item.matches[nextIndex];
+                                                                    voiceToolHandler('scrollToBlock', { blockIndex: match.blockIndex, matchText: match.text });
+                                                                }
+                                                            }}
+                                                            onPrev={() => {
+                                                                const prevIndex = (currentIndex - 1 + item.matches.length) % item.matches.length;
+                                                                setSearchNavState(prev => ({ ...prev, [item.id]: prevIndex }));
+                                                                if (voiceToolHandler) {
+                                                                    const match = item.matches[prevIndex];
+                                                                    voiceToolHandler('scrollToBlock', { blockIndex: match.blockIndex, matchText: match.text });
+                                                                }
+                                                            }}
+                                                            onSelect={(index) => {
+                                                                setSearchNavState(prev => ({ ...prev, [item.id]: index }));
+                                                                if (voiceToolHandler) {
+                                                                    const match = item.matches[index];
+                                                                    voiceToolHandler('scrollToBlock', { blockIndex: match.blockIndex, matchText: match.text });
+                                                                }
+                                                            }}
+                                                            onClose={() => {
+                                                                // Remove from nav state (navigation hidden but still in history)
+                                                                setSearchNavState(prev => {
+                                                                    const { [item.id]: _, ...rest } = prev;
+                                                                    return rest;
+                                                                });
+                                                            }}
+                                                        />
+                                                    );
                                                 }
                                                 return null;
                                             })}
