@@ -4,6 +4,7 @@ import React from 'react';
 import DocxEditor from './DocxEditor';
 import PdfViewer from './PdfViewer';
 import XlsxEditor from './XlsxEditor';
+import CustomDocEditorWrapper from './CustomDocEditorWrapper';
 import styles from './DocEditor.module.css';
 
 interface DocEditorProps {
@@ -18,6 +19,9 @@ export default function DocEditor({ file, fileName, handle }: DocEditorProps) {
     const isXlsx = fileName.toLowerCase().endsWith('.xlsx');
 
     if (isDocx) {
+        if (process.env.NEXT_PUBLIC_USE_CUSTOM_EDITOR === 'true') {
+            return <CustomDocEditorWrapper file={file} fileName={fileName} handle={handle} />;
+        }
         return <DocxEditor file={file} fileName={fileName} handle={handle} />;
     }
 

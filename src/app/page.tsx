@@ -9,6 +9,7 @@ import EditorPanel from '@/components/editor/EditorPanel';
 import AgentPanel from '@/components/agent/AgentPanel';
 import { Sparkles } from 'lucide-react';
 import styles from './page.module.css';
+import EditorV2Page from '@/app/editorv2/page';
 
 function IDELayout() {
   const { isPanelOpen, togglePanel } = useWorkspace();
