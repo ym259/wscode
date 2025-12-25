@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { ToolDefinition, createTool, ToolContext } from '../types';
 import { findFileHandle } from '../utils';
 

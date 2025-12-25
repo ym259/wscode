@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import dynamic from 'next/dynamic';
 import { WorkspaceProvider, useWorkspace } from '@/contexts/WorkspaceContext';
 import { useUniversalAgent } from '@/components/editor/hooks/useUniversalAgent';

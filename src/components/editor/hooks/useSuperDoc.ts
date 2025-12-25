@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useMemo } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { SuperDoc } from '@harbour-enterprises/superdoc';
 
 export function useSuperDoc(
@@ -7,24 +7,26 @@ export function useSuperDoc(
     fileName: string
 ) {
     const superdocRef = useRef<SuperDoc | null>(null);
+    const [superdocInstance, setSuperdocInstance] = useState<SuperDoc | null>(null);
     const [isReady, setIsReady] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
-    const toolbarId = useMemo(() => `toolbar-${Math.random().toString(36).substring(2, 9)}`, []);
+    const [toolbarId] = useState(() => `toolbar - ${Math.random().toString(36).substring(2, 9)} `);
 
     useEffect(() => {
         if (!containerRef.current) return;
 
         const ext = fileName.toLowerCase();
         if (!ext.endsWith('.docx')) {
-            setError(`File type not supported. SuperDoc currently supports .docx files only.`);
+            // eslint-disable-next-line react-hooks/set-state-in-effect
+            setError(`File type not supported.SuperDoc currently supports.docx files only.`);
             return;
         }
 
         try {
-            superdocRef.current = new SuperDoc({
+            const instance = new SuperDoc({
                 selector: containerRef.current,
-                toolbar: `#${toolbarId}`,
+                toolbar: `#${toolbarId} `,
                 document: file,
                 documentMode: 'suggesting',
                 user: {
@@ -34,8 +36,10 @@ export function useSuperDoc(
                 onReady: () => {
                     setIsReady(true);
                     setError(null);
+                    setSuperdocInstance(instance);
                 },
             });
+            superdocRef.current = instance;
         } catch (err) {
             console.error('Error initializing SuperDoc:', err);
             setError('Failed to load document. Please try again.');
@@ -76,5 +80,5 @@ export function useSuperDoc(
         };
     }, []);
 
-    return { superdocRef, isReady, error, toolbarId };
+    return { superdocRef, superdocInstance, isReady, error, toolbarId };
 }

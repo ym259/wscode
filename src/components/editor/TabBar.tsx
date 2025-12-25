@@ -1,8 +1,9 @@
 'use client';
 
 import React from 'react';
-import { X, FileText } from 'lucide-react';
+import { X } from 'lucide-react';
 import { useWorkspace } from '@/contexts/WorkspaceContext';
+import FileIcon from '../common/FileIcon';
 import styles from './TabBar.module.css';
 
 export default function TabBar() {
@@ -17,7 +18,7 @@ export default function TabBar() {
                         className={`${styles.tab} ${tab.id === activeTabId ? styles.active : ''}`}
                         onClick={() => setActiveTab(tab.id)}
                     >
-                        <FileText size={14} className={styles.tabIcon} />
+                        <FileIcon fileName={tab.name} size={14} className={styles.tabIcon} />
                         <span className={styles.tabName}>{tab.name}</span>
                         {tab.isDirty && <span className={styles.dirty}>●</span>}
                         <button

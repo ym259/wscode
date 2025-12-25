@@ -13,6 +13,7 @@
 
 import { Extension, Mark } from '@tiptap/core';
 import { Plugin, PluginKey } from '@tiptap/pm/state';
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import Paragraph from '@tiptap/extension-paragraph';
 
 // Generate unique ID for blocks

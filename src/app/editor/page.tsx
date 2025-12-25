@@ -22,7 +22,7 @@ const SuperDocComponent = dynamic(
             useEffect(() => {
                 if (!containerRef.current || !file) return;
 
-                const superdoc = new mod.SuperDoc({
+                new mod.SuperDoc({
                     selector: containerRef.current,
                     toolbar: `#${toolbarId}`,
                     document: file,

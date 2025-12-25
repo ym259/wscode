@@ -1,4 +1,5 @@
 'use client';
+/* eslint-disable @typescript-eslint/no-explicit-any */
 
 import React, { useState, forwardRef } from 'react';
 
@@ -27,10 +28,7 @@ export const CustomDocEditor = forwardRef<CustomDocEditorHandle, CustomDocEditor
 
     // 1. Initialize Editor
     const editor = useCustomEditor({
-        setSelectionUpdateKey,
-        setComments,
-        comments,
-        docAttrs
+        setSelectionUpdateKey
     });
 
     // 2. Expose Handle

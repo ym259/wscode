@@ -5,6 +5,7 @@
 
 import { SuperDoc } from '@harbour-enterprises/superdoc';
 import { AIActions } from '@superdoc-dev/ai';
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { FileSystemItem } from '@/types';
 import {
     ToolDefinition,

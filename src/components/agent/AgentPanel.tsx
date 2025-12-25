@@ -1,5 +1,6 @@
 'use client';
 
+/* eslint-disable @next/next/no-img-element */
 import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { X, Sparkles, User, Bot, Mic, MicOff, AlertCircle } from 'lucide-react';
 import { useWorkspace } from '@/contexts/WorkspaceContext';
@@ -118,11 +119,11 @@ export default function AgentPanel({ isOpen, onClose }: AgentPanelProps) {
                                     if (parsed.matches.length > 0 && voiceToolHandler) {
                                         const firstMatch = parsed.matches[0];
                                         voiceToolHandler('scrollToBlock', { blockIndex: firstMatch.blockIndex, matchText: firstMatch.text })
-                                            .catch(e => console.error('Auto-scroll failed:', e));
+                                            .catch((unknown) => console.error('Auto-scroll failed:', unknown));
                                     }
                                 }
                             }
-                        } catch (e) {
+                        } catch {
                             // Ignore parse errors
                         }
 
@@ -173,7 +174,7 @@ export default function AgentPanel({ isOpen, onClose }: AgentPanelProps) {
             setIsLoading(false);
             scrollToBottom();
         }
-    }, [aiActionHandler, addMessage, updateMessage, scrollToBottom]);
+    }, [aiActionHandler, addMessage, updateMessage, scrollToBottom, voiceToolHandler]);
 
     const handleSubmit = useCallback(async (e?: React.FormEvent, messageOverride?: string) => {
         e?.preventDefault();
@@ -533,6 +534,7 @@ export default function AgentPanel({ isOpen, onClose }: AgentPanelProps) {
                                                             onClose={() => {
                                                                 // Remove from nav state (navigation hidden but still in history)
                                                                 setSearchNavState(prev => {
+                                                                    // eslint-disable-next-line @typescript-eslint/no-unused-vars
                                                                     const { [item.id]: _, ...rest } = prev;
                                                                     return rest;
                                                                 });

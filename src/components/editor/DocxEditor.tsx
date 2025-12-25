@@ -1,5 +1,6 @@
 'use client';
 
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import React, { useRef, useEffect, useCallback } from 'react';
 // import '@harbour-enterprises/superdoc/style.css';
 import styles from './DocEditor.module.css';
@@ -21,7 +22,7 @@ export default function DocxEditor({ file, fileName, handle }: DocxEditorProps) 
     const containerRef = useRef<HTMLDivElement>(null);
 
     // Initialize formatting and editor core
-    const { superdocRef, isReady, error: docError, toolbarId } = useSuperDoc(containerRef, file, fileName);
+    const { superdocRef, superdocInstance, isReady, error: docError, toolbarId } = useSuperDoc(containerRef, file, fileName);
 
     // Handle file operations (saving)
     const { saveError } = useFileHandler(superdocRef, handle, fileName);
@@ -158,8 +159,8 @@ export default function DocxEditor({ file, fileName, handle }: DocxEditorProps) 
     return (
         <div className={styles.wrapper}>
             <div id={toolbarId} className={styles.toolbar} />
-            {isReady && superdocRef.current && (
-                <TrackChangesToolbar editor={(superdocRef.current as any).editor} />
+            {isReady && superdocInstance && (
+                <TrackChangesToolbar editor={(superdocInstance as any).editor} />
             )}
             <div
                 ref={containerRef}

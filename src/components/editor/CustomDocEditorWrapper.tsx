@@ -28,7 +28,7 @@ interface CustomDocEditorWrapperProps {
 }
 
 export default function CustomDocEditorWrapper({ file, fileName, handle }: CustomDocEditorWrapperProps) {
-    const { setAIActionHandler, setVoiceToolHandler, rootItems, openFile } = useWorkspace();
+    const { setAIActionHandler, setVoiceToolHandler, rootItems } = useWorkspace();
     const editorRef = useRef<CustomDocEditorHandle>(null);
     const [editorReady, setEditorReady] = useState(false);
 

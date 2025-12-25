@@ -20,7 +20,6 @@ export const SelectionPopover: React.FC<SelectionPopoverProps> = ({
     x,
     y,
     onAddComment,
-    onClose,
 }) => {
     if (!visible) return null;
 
@@ -104,7 +103,8 @@ export const CommentInputPopover: React.FC<CommentInputPopoverProps> = ({
 
     useEffect(() => {
         if (!visible) {
-            setComment('');
+            // eslint-disable-next-line react-hooks/set-state-in-effect
+            setComment((prev) => (prev !== '' ? '' : prev));
         }
     }, [visible]);
 

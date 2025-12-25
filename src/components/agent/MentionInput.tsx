@@ -1,6 +1,7 @@
 'use client';
 
-import React, { useState, useRef, useCallback, useEffect } from 'react';
+/* eslint-disable @next/next/no-img-element */
+import React, { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import { Send, Quote, X, Paperclip, Image as ImageIcon } from 'lucide-react';
 import { FileSystemItem } from '@/types';
 import { useWorkspace } from '@/contexts/WorkspaceContext';
@@ -29,29 +30,37 @@ export function MentionInput({ value, onChange, onSubmit, disabled, workspaceFil
     const [selectedMentionIndex, setSelectedMentionIndex] = useState(0);
 
     // Recursively collect all files from workspace
+    // Recursively collect all files from workspace
     const collectFiles = useCallback((items: FileSystemItem[], parentPath = ''): { name: string; path: string }[] => {
         const files: { name: string; path: string }[] = [];
-        for (const item of items) {
-            const fullPath = parentPath ? `${parentPath}/${item.name}` : item.name;
-            if (item.type === 'file') {
-                files.push({ name: item.name, path: fullPath });
+
+        const collect = (currentItems: FileSystemItem[], currentPath: string) => {
+            for (const item of currentItems) {
+                const fullPath = currentPath ? `${currentPath}/${item.name}` : item.name;
+                if (item.type === 'file') {
+                    files.push({ name: item.name, path: fullPath });
+                }
+                if (item.children && item.children.length > 0) {
+                    collect(item.children, fullPath);
+                }
             }
-            if (item.children && item.children.length > 0) {
-                files.push(...collectFiles(item.children, fullPath));
-            }
-        }
+        };
+
+        collect(items, parentPath);
         return files;
     }, []);
 
     const allFiles = collectFiles(workspaceFiles);
 
     // Filter files based on mention query
-    const filteredFiles = mentionQuery !== null
-        ? allFiles.filter(f =>
-            f.name.toLowerCase().includes(mentionQuery.toLowerCase()) ||
-            f.path.toLowerCase().includes(mentionQuery.toLowerCase())
-        ).slice(0, 8) // Limit to 8 suggestions
-        : [];
+    const filteredFiles = useMemo(() => {
+        return mentionQuery !== null
+            ? allFiles.filter(f =>
+                f.name.toLowerCase().includes(mentionQuery.toLowerCase()) ||
+                f.path.toLowerCase().includes(mentionQuery.toLowerCase())
+            ).slice(0, 8) // Limit to 8 suggestions
+            : [];
+    }, [allFiles, mentionQuery]);
 
     // Auto-resize textarea
     useEffect(() => {

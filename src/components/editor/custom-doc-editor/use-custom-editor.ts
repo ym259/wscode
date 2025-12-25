@@ -1,4 +1,5 @@
-import { useRef, useImperativeHandle, Dispatch, SetStateAction } from 'react';
+/* eslint-disable @typescript-eslint/no-explicit-any, react-hooks/immutability */
+import { useImperativeHandle, Dispatch, SetStateAction } from 'react';
 import { useEditor, Editor } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import { Underline as UnderlineExtension } from '@tiptap/extension-underline';
@@ -23,16 +24,13 @@ import {
     DeletionMark,
     CommentMark,
 } from '../extensions';
-import { CustomDocEditorHandle, Comment } from './types';
+import { Comment } from './types';
 
 interface UseCustomEditorProps {
     setSelectionUpdateKey: Dispatch<SetStateAction<number>>;
-    setComments: Dispatch<SetStateAction<Comment[]>>;
-    comments: Comment[];
-    docAttrs: any;
 }
 
-export const useCustomEditor = ({ setSelectionUpdateKey, setComments, comments, docAttrs }: UseCustomEditorProps) => {
+export const useCustomEditor = ({ setSelectionUpdateKey }: UseCustomEditorProps) => {
     const editor = useEditor({
         extensions: [
             StarterKit.configure({ paragraph: false }),

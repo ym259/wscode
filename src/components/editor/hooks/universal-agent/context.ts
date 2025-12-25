@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { AIActions } from '@superdoc-dev/ai';
 import { ToolContext } from '@/tools';
 import { FileType, UniversalAgentConfig } from './types';

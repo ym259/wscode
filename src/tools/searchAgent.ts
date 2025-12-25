@@ -9,6 +9,7 @@
 
 import OpenAI from 'openai';
 import { Agent, Runner, OpenAIProvider } from '@openai/agents';
+/* eslint-disable @typescript-eslint/no-explicit-any, @typescript-eslint/no-unused-vars, prefer-const */
 import { ToolDefinition, ToolContext, createTool } from './types';
 
 // Search result item

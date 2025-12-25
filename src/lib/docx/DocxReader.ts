@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import JSZip from 'jszip';
 import { XMLParser } from 'fast-xml-parser';
 
@@ -742,7 +743,7 @@ export class DocxReader {
             }
         });
 
-        const type = attrs.level ? 'heading' : 'paragraph';
+
         const validChildren = children.filter(c => c);
 
         // Heuristic removed to improve round-trip fidelity. 

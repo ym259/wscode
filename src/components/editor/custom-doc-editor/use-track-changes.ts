@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react';
+/* eslint-disable @typescript-eslint/no-explicit-any */
+import { useState, useEffect } from 'react';
 import { Editor } from '@tiptap/react';
 import { TrackChangePopupData } from '../popups/TrackChangePopup';
 

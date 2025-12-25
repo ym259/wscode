@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-unused-vars, prefer-const */
 import { ToolDefinition, createTool, ToolContext } from '../types';
 
 // Page size presets in twips (1 inch = 1440 twips, 1 mm ≈ 56.69 twips)

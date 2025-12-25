@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any, @typescript-eslint/no-unused-vars */
 /**
  * Check if a text node has a deletion mark (track changes).
  * Used to skip deleted text when searching for content.

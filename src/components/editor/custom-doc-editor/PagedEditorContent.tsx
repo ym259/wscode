@@ -1,5 +1,6 @@
 'use client';
 
+/* eslint-disable @typescript-eslint/no-explicit-any, @typescript-eslint/no-unused-vars */
 import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { Editor, EditorContent } from '@tiptap/react';
 
@@ -198,11 +199,12 @@ export const PagedEditorContent: React.FC<PagedEditorContentProps> = ({
 
         setPages(pageList);
         setClonedContent(proseMirror.innerHTML);
-    }, [contentAreaHeight]);
+    }, [contentAreaHeight, isPaged]);
 
-    useEffect(() => {
+    React.useLayoutEffect(() => {
         if (!isPaged) return;
 
+        // Debounce slightly to avoid thrashing
         const timer = setTimeout(calculatePages, 100);
         window.addEventListener('resize', calculatePages);
 
@@ -226,7 +228,7 @@ export const PagedEditorContent: React.FC<PagedEditorContentProps> = ({
         };
     }, [calculatePages, editor, isPaged]);
 
-    useEffect(() => {
+    React.useLayoutEffect(() => {
         calculatePages();
     }, [docAttrs, calculatePages]);
 

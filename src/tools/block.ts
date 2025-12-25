@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { ToolDefinition, createTool, ToolContext } from './types';
 
 /**
@@ -323,8 +324,16 @@ export const getBlockTools = (context: ToolContext): ToolDefinition[] => {
                                         console.log(`[fixOrderedListNumbering] Also updating child ${child.type.name} at pos ${childPos}`);
                                         tr = tr.setNodeMarkup(childPos, undefined, newChildAttrs, child.marks);
                                     }
+                                } else {
+                                    // Reset group tracking when hitting non-list block
+                                    currentGroupStart = null;
+                                    currentGroupIndex = 0;
                                 }
                             });
+                        } else {
+                            // Reset group tracking when hitting non-list block
+                            currentGroupStart = null;
+                            currentGroupIndex = 0;
                         }
                     } else {
                         // Reset group tracking when hitting non-list block
@@ -401,7 +410,7 @@ export const getBlockTools = (context: ToolContext): ToolDefinition[] => {
                     b.node.forEach((child: any) => {
                         const childInfo = `${child.type.name}`;
                         const childAttrs = Object.entries(child.attrs || {})
-                            .filter(([k, v]) => v !== null && v !== undefined)
+                            .filter(([, v]) => v !== null && v !== undefined)
                             .slice(0, 3)
                             .map(([k, v]) => `${k}:${JSON.stringify(v).substring(0, 20)}`)
                             .join(',');

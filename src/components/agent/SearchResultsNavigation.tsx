@@ -22,8 +22,7 @@ export const SearchResultsNavigation: React.FC<SearchResultsNavigationProps> = (
     currentIndex,
     onNext,
     onPrev,
-    onClose,
-    onSelect
+    onClose
 }) => {
     if (results.length === 0) return null;
 

@@ -2,7 +2,7 @@
 
 import React, { createContext, useContext, useState, useCallback, ReactNode, useEffect } from 'react';
 import { FileSystemItem, EditorTab, ChatMessage, WorkspaceState, AttachedSelection } from '@/types';
-import { ToolCall, AgentEvent } from '@/types';
+import { AgentEvent } from '@/types';
 import { saveToDB, getFromDB, STORAGE_KEYS } from '@/lib/indexeddb';
 
 // Type for the AI action handler function
@@ -116,6 +116,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         };
 
         reloadFiles();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [rootItems.length, openTabs.length]);
 
     const setRootItems = useCallback((items: FileSystemItem[]) => {

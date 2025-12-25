@@ -3,7 +3,6 @@
 import React, { useEffect, useState } from 'react';
 import { Editor } from '@tiptap/core';
 import { trackChangesHelpers } from '@harbour-enterprises/superdoc';
-import styles from './DocEditor.module.css'; // Reusing existing styles for consistency
 
 interface TrackChangesToolbarProps {
     editor: Editor | null;

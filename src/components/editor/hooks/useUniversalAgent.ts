@@ -9,6 +9,7 @@
  * @module components/editor/hooks/useUniversalAgent
  */
 
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { AIActions, createAIProvider } from '@superdoc-dev/ai';
 import { ChatMessage, AgentEvent } from '@/types';
@@ -287,7 +288,7 @@ export function useUniversalAgent(config: UniversalAgentConfig) {
                 });
 
                 let finalContent = '';
-                let toolCallsMap: Record<string, { id: string; name: string; args: string }> = {};
+                const toolCallsMap: Record<string, { id: string; name: string; args: string }> = {};
 
                 for await (const event of stream) {
                     // Handle reasoning

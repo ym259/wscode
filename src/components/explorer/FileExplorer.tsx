@@ -92,7 +92,7 @@ export default function FileExplorer({ onClose }: FileExplorerProps) {
         if (rootItems.length > 0) {
             checkPermissions();
         }
-    }, [rootItems.length, setRootItems]);
+    }, [rootItems.length, setRootItems]); // eslint-disable-line react-hooks/exhaustive-deps
 
     const handleRestoreAccess = useCallback(async (item: FileSystemItem) => {
         if (!item.handle) return;
@@ -116,7 +116,7 @@ export default function FileExplorer({ onClose }: FileExplorerProps) {
         } finally {
             setIsLoading(false);
         }
-    }, [rootItems, setRootItems]);
+    }, [rootItems.length, setRootItems, rootItems]); // eslint-disable-line react-hooks/exhaustive-deps
 
     const handleAddFolder = useCallback(async () => {
         try {

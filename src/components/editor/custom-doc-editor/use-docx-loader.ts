@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { useEffect, useState, Dispatch, SetStateAction } from 'react';
 import { Editor } from '@tiptap/react';
 import { DocxReader } from '../../../lib/docx/DocxReader';

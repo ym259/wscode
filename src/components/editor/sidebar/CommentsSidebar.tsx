@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useState, useRef, useCallback } from 'react';
+import React, { useState, useRef, useCallback } from 'react';
 import { Editor } from '@tiptap/react';
 
 interface Comment {
@@ -36,13 +36,13 @@ export const CommentsSidebar: React.FC<CommentsSidebarProps> = ({ comments, edit
         if (!editor || !sidebarRef.current) return;
 
         const editorElement = editor.view.dom;
-        const sidebarElement = sidebarRef.current;
+
 
         // Get the scrollable container (the editor's scroll container)
         const editorScrollContainer = editorElement.closest('[style*="overflow"]') || editorElement.parentElement;
         if (!editorScrollContainer) return;
 
-        const sidebarRect = sidebarElement.getBoundingClientRect();
+
         const containerRect = editorScrollContainer.getBoundingClientRect();
 
         const positions: CommentPosition[] = [];
@@ -80,7 +80,8 @@ export const CommentsSidebar: React.FC<CommentsSidebarProps> = ({ comments, edit
     }, [comments, editor]);
 
     // Recalculate positions when comments change, editor updates, or window resizes
-    useEffect(() => {
+    // Use useLayoutEffect to prevent visual jitter
+    React.useLayoutEffect(() => {
         calculatePositions();
 
         // Recalculate on scroll

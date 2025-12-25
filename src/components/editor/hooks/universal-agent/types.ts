@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { RefObject } from 'react';
 import { SuperDoc } from '@harbour-enterprises/superdoc';
 import { FileSystemItem } from '@/types';

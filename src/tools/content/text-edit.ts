@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any, prefer-const */
 import { ToolDefinition, createTool, ToolContext } from '../types';
 import { findTextPositionExcludingDeletions } from './utils';
 
@@ -91,7 +92,7 @@ export const getTextEditTools = (context: ToolContext): ToolDefinition[] => {
 
                 // 1. Find the target text first (ignoring deleted text)
                 // We do this BEFORE replacing to ensure we find the correct location
-                let textPosition = findTextPositionExcludingDeletions(editor.state.doc, find, searchOptions);
+                const textPosition = findTextPositionExcludingDeletions(editor.state.doc, find, searchOptions);
 
                 if (!textPosition) {
                     let msg = `Text "${find}" not found in document.`;

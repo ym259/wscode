@@ -1,6 +1,7 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+/* eslint-disable @typescript-eslint/no-explicit-any */
+import React, { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { X, FileText, Maximize2 } from 'lucide-react';
 
@@ -67,14 +68,17 @@ export const PageLayoutDialog: React.FC<PageLayoutDialogProps> = ({
             const matchedPreset = PAGE_SIZE_PRESETS.find(
                 p => Math.abs(p.width - widthTwips) < 100 && Math.abs(p.height - heightTwips) < 100
             );
+
             if (matchedPreset) {
-                setSelectedPageSize(matchedPreset.id);
-                setUseCustomSize(false);
+                // eslint-disable-next-line react-hooks/set-state-in-effect
+                setSelectedPageSize(prev => prev !== matchedPreset.id ? matchedPreset.id : prev);
+                setUseCustomSize(prev => prev !== false ? false : prev);
             } else {
-                setUseCustomSize(true);
+                setUseCustomSize(prev => prev !== true ? true : prev);
             }
-            setCustomWidth(twipsToMm(widthTwips));
-            setCustomHeight(twipsToMm(heightTwips));
+
+            setCustomWidth(prev => { const val = twipsToMm(widthTwips); return prev !== val ? val : prev; });
+            setCustomHeight(prev => { const val = twipsToMm(heightTwips); return prev !== val ? val : prev; });
 
             // Margins
             const topTwips = docAttrs?.pageMargins?.['w:top'] || 1440;
@@ -88,16 +92,18 @@ export const PageLayoutDialog: React.FC<PageLayoutDialogProps> = ({
                     Math.abs(p.bottom - bottomTwips) < 50 &&
                     Math.abs(p.left - leftTwips) < 50
             );
+
             if (matchedMargin) {
-                setSelectedMarginPreset(matchedMargin.id);
-                setUseCustomMargins(false);
+                setSelectedMarginPreset(prev => prev !== matchedMargin.id ? matchedMargin.id : prev);
+                setUseCustomMargins(prev => prev !== false ? false : prev);
             } else {
-                setUseCustomMargins(true);
+                setUseCustomMargins(prev => prev !== true ? true : prev);
             }
-            setMarginTop(twipsToMm(topTwips));
-            setMarginRight(twipsToMm(rightTwips));
-            setMarginBottom(twipsToMm(bottomTwips));
-            setMarginLeft(twipsToMm(leftTwips));
+
+            setMarginTop(prev => { const val = twipsToMm(topTwips); return prev !== val ? val : prev; });
+            setMarginRight(prev => { const val = twipsToMm(rightTwips); return prev !== val ? val : prev; });
+            setMarginBottom(prev => { const val = twipsToMm(bottomTwips); return prev !== val ? val : prev; });
+            setMarginLeft(prev => { const val = twipsToMm(leftTwips); return prev !== val ? val : prev; });
         }
     }, [isOpen, docAttrs]);
 

@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { ToolDefinition, createTool, ToolContext } from '../types';
 import { hasDeletionMark } from './utils';
 
@@ -55,7 +56,7 @@ export const getTableTools = (context: ToolContext): ToolDefinition[] => {
                 try {
                     // Find insert position - we need the position AFTER the block containing afterText
                     let insertPos = -1;
-                    let foundBlockInfo = { endPos: -1, text: '' };
+                    const foundBlockInfo = { endPos: -1, text: '' };
 
                     if (afterText) {
                         const normalizedTarget = afterText.toLowerCase();

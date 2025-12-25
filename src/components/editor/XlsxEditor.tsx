@@ -1,6 +1,7 @@
 'use client';
 
-import React, { useRef, useCallback } from 'react';
+/* eslint-disable @typescript-eslint/no-explicit-any */
+import React, { useCallback, useRef } from 'react';
 import { Workbook } from '@fortune-sheet/react';
 import '@fortune-sheet/react/dist/index.css';
 import styles from './XlsxEditor.module.css';

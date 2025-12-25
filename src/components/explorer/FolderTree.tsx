@@ -1,7 +1,8 @@
 'use client';
 
 import React, { useState, useCallback } from 'react';
-import { ChevronRight, ChevronDown, Folder, FolderOpen, FileText, FileSpreadsheet, FileType, File as FileIcon } from 'lucide-react';
+import { ChevronRight, ChevronDown, Folder, FolderOpen } from 'lucide-react';
+import FileIcon from '../common/FileIcon';
 import { FileSystemItem } from '@/types';
 import { useWorkspace } from '@/contexts/WorkspaceContext';
 import styles from './FolderTree.module.css';
@@ -16,29 +17,7 @@ interface FileItemProps {
     level: number;
 }
 
-/**
- * Returns the appropriate icon component for a file based on its extension
- */
-function getFileIcon(fileName: string, size: number, className: string) {
-    const ext = fileName.toLowerCase();
 
-    if (ext.endsWith('.xlsx') || ext.endsWith('.xls')) {
-        return <FileSpreadsheet size={size} className={className} style={{ color: '#1D6F42' }} />;
-    }
-    if (ext.endsWith('.pdf')) {
-        return <FileType size={size} className={className} style={{ color: '#E53935' }} />;
-    }
-    if (ext.endsWith('.docx') || ext.endsWith('.doc')) {
-        return <FileText size={size} className={className} style={{ color: '#2B579A' }} />;
-    }
-    if (ext.endsWith('.md')) {
-        return <FileText size={size} className={className} style={{ color: '#42A5F5' }} />;
-    }
-    if (ext.endsWith('.txt')) {
-        return <FileText size={size} className={className} />;
-    }
-    return <FileIcon size={size} className={className} />;
-}
 
 function FileItem({ item, level }: FileItemProps) {
     const { openFile, activeTabId, openTabs } = useWorkspace();
@@ -78,7 +57,7 @@ function FileItem({ item, level }: FileItemProps) {
         }
     }, [item, isExpanded, openFile]);
 
-    const paddingLeft = 8 + level * 16;
+    const paddingLeft = level * 10;
 
     return (
         <>
@@ -102,7 +81,7 @@ function FileItem({ item, level }: FileItemProps) {
                 ) : (
                     <>
                         <span className={styles.chevron} />
-                        {getFileIcon(item.name, 16, styles.fileIcon)}
+                        <FileIcon fileName={item.name} size={16} className={styles.fileIcon} />
                     </>
                 )}
                 <span className={styles.name}>{item.name}</span>
