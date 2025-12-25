@@ -155,6 +155,7 @@ export const CustomDocEditor = forwardRef<CustomDocEditorHandle, CustomDocEditor
                                     editor={editor}
                                     docAttrs={docAttrs}
                                     trackChangesDisplayMode={trackChangesDisplayMode}
+                                    isPaged={process.env.NEXT_PUBLIC_DISABLE_PAGED_VIEW !== 'true'}
                                 />
                             </div>
                         )}

@@ -7,6 +7,7 @@ interface PagedEditorContentProps {
     editor: Editor | null;
     docAttrs: any;
     trackChangesDisplayMode: 'markup' | 'final';
+    isPaged?: boolean;
 }
 
 // Convert twips to pixels at 96 DPI
@@ -57,6 +58,7 @@ export const PagedEditorContent: React.FC<PagedEditorContentProps> = ({
     editor,
     docAttrs,
     trackChangesDisplayMode,
+    isPaged = true,
 }) => {
     const [pages, setPages] = useState<PageInfo[]>([{ pageNumber: 1, contentOffset: 0, visibleHeight: 0 }]);
     const editorContainerRef = useRef<HTMLDivElement>(null);
@@ -129,9 +131,17 @@ export const PagedEditorContent: React.FC<PagedEditorContentProps> = ({
         return lines;
     };
 
+    // Tolerance for line-height leading/padding (5px).
+    // If a line overshoots by less than this, we keep it on the current page.
+    const LINE_HEIGHT_TOLERANCE = 3;
+
     // Calculate page breaks: find where each page should start based on LINE boundaries
     const calculatePages = useCallback(() => {
         if (!editorContainerRef.current) return;
+        if (!isPaged) {
+            setPages([{ pageNumber: 1, contentOffset: 0, visibleHeight: 0 }]); // Dummy page for non-paged mode
+            return;
+        }
 
         const proseMirror = editorContainerRef.current.querySelector('.ProseMirror') as HTMLElement;
         if (!proseMirror) return;
@@ -191,6 +201,8 @@ export const PagedEditorContent: React.FC<PagedEditorContentProps> = ({
     }, [contentAreaHeight]);
 
     useEffect(() => {
+        if (!isPaged) return;
+
         const timer = setTimeout(calculatePages, 100);
         window.addEventListener('resize', calculatePages);
 
@@ -212,7 +224,7 @@ export const PagedEditorContent: React.FC<PagedEditorContentProps> = ({
             window.removeEventListener('resize', calculatePages);
             observer.disconnect();
         };
-    }, [calculatePages, editor]);
+    }, [calculatePages, editor, isPaged]);
 
     useEffect(() => {
         calculatePages();
@@ -234,10 +246,11 @@ export const PagedEditorContent: React.FC<PagedEditorContentProps> = ({
                 style={{
                     position: 'relative',
                     width: `${pageWidth}px`,
-                    height: `${pageHeight}px`,
+                    height: isPaged ? `${pageHeight}px` : 'auto',
+                    minHeight: isPaged ? undefined : `${pageHeight}px`,
                     backgroundColor: '#ffffff',
                     boxShadow: '0 2px 8px rgba(0,0,0,0.15), 0 1px 3px rgba(0,0,0,0.1)',
-                    overflow: 'hidden',
+                    overflow: isPaged ? 'hidden' : 'visible',
                 }}
             >
                 <PageCorners />
@@ -247,14 +260,18 @@ export const PagedEditorContent: React.FC<PagedEditorContentProps> = ({
                     ref={editorContainerRef}
                     className={trackChangesDisplayMode === 'final' ? 'track-changes-final-mode' : ''}
                     style={{
-                        position: 'absolute',
-                        top: `${marginTop}px`,
-                        left: `${marginLeft}px`,
-                        right: `${marginRight}px`,
-                        height: `${contentAreaHeight}px`,
-                        overflow: 'hidden',
+                        position: isPaged ? 'absolute' : 'relative',
+                        top: isPaged ? `${marginTop}px` : undefined,
+                        left: isPaged ? `${marginLeft}px` : undefined,
+                        right: isPaged ? `${marginRight}px` : undefined,
+                        marginTop: isPaged ? undefined : `${marginTop}px`,
+                        marginLeft: isPaged ? undefined : `${marginLeft}px`,
+                        marginRight: isPaged ? undefined : `${marginRight}px`,
+                        marginBottom: isPaged ? undefined : `${marginBottom}px`,
+                        height: isPaged ? `${contentAreaHeight}px` : 'auto',
+                        overflow: isPaged ? 'hidden' : 'visible',
                         // Clip content precisely at the line boundary where page 1 ends
-                        clipPath: pages[0]?.visibleHeight && pages[0].visibleHeight < contentAreaHeight
+                        clipPath: isPaged && pages[0]?.visibleHeight && pages[0].visibleHeight < contentAreaHeight
                             ? `inset(0 0 ${contentAreaHeight - pages[0].visibleHeight}px 0)`
                             : undefined,
                     }}
@@ -262,59 +279,7 @@ export const PagedEditorContent: React.FC<PagedEditorContentProps> = ({
                     <EditorContent editor={editor} />
                 </div>
 
-                <div style={{
-                    position: 'absolute',
-                    bottom: '8px',
-                    left: '50%',
-                    transform: 'translateX(-50%)',
-                    fontSize: '10px',
-                    color: '#9ca3af',
-                }}>
-                    1
-                </div>
-            </div>
-
-            {/* Additional pages - show content offset to display the right portion */}
-            {pages.slice(1).map((pageInfo) => (
-                <div
-                    key={pageInfo.pageNumber}
-                    style={{
-                        position: 'relative',
-                        width: `${pageWidth}px`,
-                        height: `${pageHeight}px`,
-                        backgroundColor: '#ffffff',
-                        boxShadow: '0 2px 8px rgba(0,0,0,0.15), 0 1px 3px rgba(0,0,0,0.1)',
-                        overflow: 'hidden',
-                    }}
-                >
-                    <PageCorners />
-
-                    <div
-                        className={trackChangesDisplayMode === 'final' ? 'track-changes-final-mode' : ''}
-                        style={{
-                            position: 'absolute',
-                            top: `${marginTop}px`,
-                            left: `${marginLeft}px`,
-                            right: `${marginRight}px`,
-                            height: `${contentAreaHeight}px`,
-                            overflow: 'hidden',
-                            // Clip content precisely at the line boundary where this page ends
-                            clipPath: pageInfo.visibleHeight < contentAreaHeight
-                                ? `inset(0 0 ${contentAreaHeight - pageInfo.visibleHeight}px 0)`
-                                : undefined,
-                        }}
-                    >
-                        {/* Cloned content with negative margin to show correct portion */}
-                        <div
-                            className="ProseMirror"
-                            style={{
-                                marginTop: `-${pageInfo.contentOffset}px`,
-                                pointerEvents: 'none',
-                            }}
-                            dangerouslySetInnerHTML={{ __html: clonedContent }}
-                        />
-                    </div>
-
+                {isPaged && (
                     <div style={{
                         position: 'absolute',
                         bottom: '8px',
@@ -323,33 +288,91 @@ export const PagedEditorContent: React.FC<PagedEditorContentProps> = ({
                         fontSize: '10px',
                         color: '#9ca3af',
                     }}>
-                        {pageInfo.pageNumber}
+                        1
                     </div>
-                </div>
-            ))}
+                )}
+            </div>
 
-            {pages.length > 0 && (
-                <div
-                    style={{
-                        position: 'fixed',
-                        bottom: '16px',
-                        left: '50%',
-                        transform: 'translateX(-50%)',
-                        backgroundColor: 'rgba(0,0,0,0.75)',
-                        color: '#fff',
-                        padding: '8px 16px',
-                        borderRadius: '20px',
-                        fontSize: '12px',
-                        fontWeight: 500,
-                        zIndex: 100,
-                        pointerEvents: 'none',
-                        backdropFilter: 'blur(4px)',
-                    }}
-                >
-                    {pages.length} ページ
-                </div>
-            )}
-        </div>
+            {/* Additional pages - show content offset to display the right portion */}
+            {
+                isPaged && pages.slice(1).map((pageInfo) => (
+                    <div
+                        key={pageInfo.pageNumber}
+                        style={{
+                            position: 'relative',
+                            width: `${pageWidth}px`,
+                            height: `${pageHeight}px`,
+                            backgroundColor: '#ffffff',
+                            boxShadow: '0 2px 8px rgba(0,0,0,0.15), 0 1px 3px rgba(0,0,0,0.1)',
+                            overflow: 'hidden',
+                        }}
+                    >
+                        <PageCorners />
+
+                        <div
+                            className={trackChangesDisplayMode === 'final' ? 'track-changes-final-mode' : ''}
+                            style={{
+                                position: 'absolute',
+                                top: `${marginTop}px`,
+                                left: `${marginLeft}px`,
+                                right: `${marginRight}px`,
+                                height: `${contentAreaHeight}px`,
+                                overflow: 'hidden',
+                                // Clip content precisely at the line boundary where this page ends
+                                clipPath: pageInfo.visibleHeight < contentAreaHeight
+                                    ? `inset(0 0 ${contentAreaHeight - pageInfo.visibleHeight}px 0)`
+                                    : undefined,
+                            }}
+                        >
+                            {/* Cloned content with negative margin to show correct portion */}
+                            <div
+                                className="ProseMirror"
+                                style={{
+                                    marginTop: `-${pageInfo.contentOffset}px`,
+                                    pointerEvents: 'none',
+                                }}
+                                dangerouslySetInnerHTML={{ __html: clonedContent }}
+                            />
+                        </div>
+
+                        <div style={{
+                            position: 'absolute',
+                            bottom: '8px',
+                            left: '50%',
+                            transform: 'translateX(-50%)',
+                            fontSize: '10px',
+                            color: '#9ca3af',
+                        }}>
+                            {pageInfo.pageNumber}
+                        </div>
+                    </div>
+                ))
+            }
+
+            {
+                isPaged && pages.length > 0 && (
+                    <div
+                        style={{
+                            position: 'fixed',
+                            bottom: '16px',
+                            left: '50%',
+                            transform: 'translateX(-50%)',
+                            backgroundColor: 'rgba(0,0,0,0.75)',
+                            color: '#fff',
+                            padding: '8px 16px',
+                            borderRadius: '20px',
+                            fontSize: '12px',
+                            fontWeight: 500,
+                            zIndex: 100,
+                            pointerEvents: 'none',
+                            backdropFilter: 'blur(4px)',
+                        }}
+                    >
+                        {pages.length} ページ
+                    </div>
+                )
+            }
+        </div >
     );
 };
 

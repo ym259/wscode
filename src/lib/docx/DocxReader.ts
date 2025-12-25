@@ -411,7 +411,7 @@ export class DocxReader {
                     for (const contentItem of contentItems) {
                         const contentKey = Object.keys(contentItem)[0];
                         if (contentKey === 'w:p' || contentKey === 'p') {
-                            results.push(this.parseParagraph(contentItem[contentKey]));
+                            results.push(...this.parseParagraph(contentItem[contentKey]));
                         } else if (contentKey === 'w:tbl' || contentKey === 'tbl') {
                             results.push(this.parseTable(contentItem[contentKey]));
                         } else if (contentKey === 'w:sdt' || contentKey === 'sdt') {
@@ -434,7 +434,7 @@ export class DocxReader {
                                 for (const child of insContent) {
                                     const k = Object.keys(child)[0];
                                     if (k === 'w:p' || k === 'p') {
-                                        results.push(this.parseParagraph(child[k]));
+                                        results.push(...this.parseParagraph(child[k]));
                                     } else if (k === 'w:r' || k === 'r') {
                                         runNodes.push(...this.parseRun(child[k]));
                                     }
@@ -455,11 +455,12 @@ export class DocxReader {
         return results;
     }
 
-    private parseParagraph(nodeContent: any[]) {
+    private parseParagraph(nodeContent: any[]): any[] {
         const attrs: any = {};
         const children: any[] = [];
         // Track active comment IDs for this paragraph
         const activeCommentIds: string[] = [];
+        let hasPageBreak = false;
 
         nodeContent.forEach(item => {
             const keys = Object.keys(item);
@@ -604,6 +605,25 @@ export class DocxReader {
                         const fill = prop[':@']?.['w:fill'] || prop[':@']?.['fill'];
                         if (fill && fill !== 'auto') attrs.backgroundColor = `#${fill}`;
                     }
+
+                    // Section Properties (SectPr) - Check for Section Break
+                    if (propKey === 'w:sectPr' || propKey === 'sectPr') {
+                        const sectPr = prop[propKey];
+                        // check w:type
+                        let type = 'nextPage'; // Default if not specified
+
+                        // sectPr is typically an array of props in this parser structure
+                        if (Array.isArray(sectPr)) {
+                            const typeNode = sectPr.find((x: any) => x['w:type'] || x['type']);
+                            if (typeNode) {
+                                type = typeNode[':@']?.['w:val'] || typeNode[':@']?.['val'] || 'nextPage';
+                            }
+                        }
+
+                        if (type !== 'continuous') {
+                            hasPageBreak = true;
+                        }
+                    }
                 });
             }
 
@@ -743,7 +763,14 @@ export class DocxReader {
             delete result.attrs.listInfo; // Don't include in attrs sent to TipTap
         }
 
-        return result;
+        const nodes = [result];
+
+        // Append Page Break if Section Break was found
+        if (hasPageBreak) {
+            nodes.push({ type: 'pageBreak' });
+        }
+
+        return nodes;
     }
 
     private parseRun(
@@ -863,11 +890,19 @@ export class DocxReader {
                 });
             }
 
-            // Line breaks: w:br - flush text and add hardBreak
+            // Line breaks: w:br
             const brKey = keys.find(k => k === 'w:br' || k === 'br');
             if (brKey) {
+                const brNode = item[brKey];
+                const type = brNode[':@']?.['w:type'] || brNode[':@']?.['type'];
+
                 flushText();
-                nodes.push({ type: 'hardBreak' });
+
+                if (type === 'page') {
+                    nodes.push({ type: 'pageBreak' });
+                } else {
+                    nodes.push({ type: 'hardBreak' });
+                }
             }
         });
 
@@ -911,7 +946,7 @@ export class DocxReader {
         tcContent.forEach(item => {
             const pKey = Object.keys(item).find(k => k === 'w:p' || k === 'p');
             if (pKey) {
-                content.push(this.parseParagraph(item[pKey]));
+                content.push(...this.parseParagraph(item[pKey]));
             }
         });
         return {
