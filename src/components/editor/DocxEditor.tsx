@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useRef, useEffect, useCallback } from 'react';
-import '@harbour-enterprises/superdoc/style.css';
+// import '@harbour-enterprises/superdoc/style.css';
 import styles from './DocEditor.module.css';
 import { TrackChangesToolbar } from './TrackChangesToolbar';
 import { useSuperDoc } from './hooks/useSuperDoc';
