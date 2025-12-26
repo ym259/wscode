@@ -38,7 +38,7 @@ const cleanJsonOutput = (output: string): string => {
 const createSearchAgent = (query: string) => {
     return new Agent({
         name: 'Searcher',
-        model: 'gpt-4o-mini',
+        model: 'gpt-4.1-mini',
         instructions: `You are a search expert. You will receive a section of a document.
 Your task is to find parts of the text that are relevant to the user's search query: "${query}"
 
