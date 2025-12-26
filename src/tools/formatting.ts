@@ -301,6 +301,320 @@ export const getFormattingTools = (context: ToolContext): ToolDefinition[] => {
                 editor.commands.unsetHighlight();
                 return 'Removed highlight from selection';
             }
+        ),
+        createTool(
+            'setFontFamily',
+            'Set font family for text. Common Japanese fonts: "MS Gothic" (ＭＳ ゴシック), "MS PGothic" (ＭＳ Ｐゴシック), "MS Mincho" (ＭＳ 明朝), "MS PMincho" (ＭＳ Ｐ明朝), "Yu Gothic", "Yu Mincho", "Meiryo". Can apply to entire document, specific text, or current selection.',
+            {
+                type: 'object',
+                properties: {
+                    fontFamily: {
+                        type: 'string',
+                        description: 'Font family name. For Japanese legal documents, use "MS Gothic" for headings (ゴシック体) and "MS Mincho" for body text (明朝体).'
+                    },
+                    find: {
+                        type: 'string',
+                        description: 'Optional: Text to find and apply font to. If not provided, applies to entire document or current selection.'
+                    },
+                    applyToEntireDocument: {
+                        type: 'boolean',
+                        description: 'If true, applies font to ALL text in the document. Useful for setting a consistent font across the entire document (default: false).'
+                    }
+                },
+                required: ['fontFamily'],
+                additionalProperties: false
+            },
+            async ({ fontFamily, find, applyToEntireDocument = false }: { fontFamily: string; find?: string; applyToEntireDocument?: boolean }) => {
+                const editor = getEditor();
+                if (!editor) throw new Error('Editor not initialized');
+
+                try {
+                    if (typeof editor.focus === 'function') editor.focus();
+
+                    // Apply to entire document
+                    if (applyToEntireDocument) {
+                        const doc = editor.state.doc;
+                        const textRanges: { from: number; to: number }[] = [];
+
+                        // Collect all text node positions
+                        doc.descendants((node: any, pos: number) => {
+                            if (node.isText && !hasDeletionMark(node)) {
+                                textRanges.push({
+                                    from: pos,
+                                    to: pos + node.text!.length
+                                });
+                            }
+                            return true;
+                        });
+
+                        if (textRanges.length === 0) {
+                            return 'No text found in document.';
+                        }
+
+                        // Apply font in reverse order to preserve positions
+                        textRanges.sort((a, b) => b.from - a.from);
+
+                        for (const range of textRanges) {
+                            editor.chain()
+                                .setTextSelection({ from: range.from, to: range.to })
+                                .setFontFamily(fontFamily)
+                                .run();
+                        }
+
+                        return `Set font family to "${fontFamily}" for entire document (${textRanges.length} text segments).`;
+                    }
+
+                    // If find is provided, select the text first
+                    if (find) {
+                        let foundFrom = -1;
+                        let foundTo = -1;
+
+                        editor.state.doc.descendants((node: any, pos: number) => {
+                            if (foundFrom > -1) return false;
+                            if (node.isText && !hasDeletionMark(node)) {
+                                const textContent = node.text!;
+                                const idx = textContent.indexOf(find);
+                                if (idx > -1) {
+                                    foundFrom = pos + idx;
+                                    foundTo = foundFrom + find.length;
+                                    return false;
+                                }
+                            }
+                            return true;
+                        });
+
+                        if (foundFrom === -1) {
+                            return `Text "${find}" not found in document.`;
+                        }
+
+                        editor.chain().setTextSelection({ from: foundFrom, to: foundTo }).setFontFamily(fontFamily).run();
+                        return `Set font family to "${fontFamily}" for text "${find}"`;
+                    }
+
+                    // Apply to current selection
+                    editor.chain().setFontFamily(fontFamily).run();
+                    return `Set font family to "${fontFamily}"`;
+                } catch (error) {
+                    console.error('[setFontFamily] Error:', error);
+                    return `Failed to set font family: ${error instanceof Error ? error.message : 'Unknown error'}`;
+                }
+            }
+        ),
+        createTool(
+            'convertToFullWidth',
+            'Convert half-width numbers and letters to full-width (半角→全角). Essential for Japanese legal documents where 全角アラビア数字 is required. Can target specific text or all text in document.',
+            {
+                type: 'object',
+                properties: {
+                    find: {
+                        type: 'string',
+                        description: 'Optional: Specific text to find and convert. If not provided, converts ALL half-width characters in the document.'
+                    },
+                    convertNumbers: {
+                        type: 'boolean',
+                        description: 'Convert numbers 0-9 to ０-９ (default: true)'
+                    },
+                    convertLetters: {
+                        type: 'boolean',
+                        description: 'Convert letters A-Z, a-z to Ａ-Ｚ, ａ-ｚ (default: false)'
+                    },
+                    convertSpace: {
+                        type: 'boolean',
+                        description: 'Convert half-width space to full-width space (default: false)'
+                    }
+                },
+                required: [],
+                additionalProperties: false
+            },
+            async ({ find, convertNumbers = true, convertLetters = false, convertSpace = false }: {
+                find?: string;
+                convertNumbers?: boolean;
+                convertLetters?: boolean;
+                convertSpace?: boolean;
+            }) => {
+                const editor = getEditor();
+                if (!editor) throw new Error('Editor not initialized');
+
+                // Half-width to full-width conversion function
+                const toFullWidth = (str: string): string => {
+                    let result = '';
+                    for (let i = 0; i < str.length; i++) {
+                        const code = str.charCodeAt(i);
+                        // Numbers: 0-9 (0x30-0x39) → ０-９ (0xFF10-0xFF19)
+                        if (convertNumbers && code >= 0x30 && code <= 0x39) {
+                            result += String.fromCharCode(code + 0xFEE0);
+                        }
+                        // Uppercase letters: A-Z (0x41-0x5A) → Ａ-Ｚ (0xFF21-0xFF3A)
+                        else if (convertLetters && code >= 0x41 && code <= 0x5A) {
+                            result += String.fromCharCode(code + 0xFEE0);
+                        }
+                        // Lowercase letters: a-z (0x61-0x7A) → ａ-ｚ (0xFF41-0xFF5A)
+                        else if (convertLetters && code >= 0x61 && code <= 0x7A) {
+                            result += String.fromCharCode(code + 0xFEE0);
+                        }
+                        // Space: (0x20) → 　 (0x3000)
+                        else if (convertSpace && code === 0x20) {
+                            result += String.fromCharCode(0x3000);
+                        }
+                        else {
+                            result += str[i];
+                        }
+                    }
+                    return result;
+                };
+
+                // Check if a string has any half-width characters to convert
+                const hasHalfWidth = (str: string): boolean => {
+                    for (let i = 0; i < str.length; i++) {
+                        const code = str.charCodeAt(i);
+                        if (convertNumbers && code >= 0x30 && code <= 0x39) return true;
+                        if (convertLetters && code >= 0x41 && code <= 0x5A) return true;
+                        if (convertLetters && code >= 0x61 && code <= 0x7A) return true;
+                        if (convertSpace && code === 0x20) return true;
+                    }
+                    return false;
+                };
+
+                try {
+                    if (typeof editor.focus === 'function') editor.focus();
+
+                    if (find) {
+                        // Convert specific text
+                        const converted = toFullWidth(find);
+                        if (converted === find) {
+                            return `Text "${find}" has no half-width characters to convert.`;
+                        }
+
+                        // Find and replace
+                        let foundFrom = -1;
+                        let foundTo = -1;
+
+                        editor.state.doc.descendants((node: any, pos: number) => {
+                            if (foundFrom > -1) return false;
+                            if (node.isText && !hasDeletionMark(node)) {
+                                const textContent = node.text!;
+                                const idx = textContent.indexOf(find);
+                                if (idx > -1) {
+                                    foundFrom = pos + idx;
+                                    foundTo = foundFrom + find.length;
+                                    return false;
+                                }
+                            }
+                            return true;
+                        });
+
+                        if (foundFrom === -1) {
+                            return `Text "${find}" not found in document.`;
+                        }
+
+                        editor.chain()
+                            .setTextSelection({ from: foundFrom, to: foundTo })
+                            .insertContent(converted)
+                            .run();
+
+                        return `Converted "${find}" → "${converted}"`;
+                    } else {
+                        // Convert all half-width characters in document
+                        // Find all text nodes with half-width characters
+                        const replacements: { from: number; to: number; original: string; converted: string }[] = [];
+
+                        editor.state.doc.descendants((node: any, pos: number) => {
+                            if (node.isText && !hasDeletionMark(node)) {
+                                const text = node.text!;
+                                if (hasHalfWidth(text)) {
+                                    replacements.push({
+                                        from: pos,
+                                        to: pos + text.length,
+                                        original: text,
+                                        converted: toFullWidth(text)
+                                    });
+                                }
+                            }
+                            return true;
+                        });
+
+                        if (replacements.length === 0) {
+                            return 'No half-width characters found in document.';
+                        }
+
+                        // Apply in reverse order to preserve positions
+                        replacements.sort((a, b) => b.from - a.from);
+
+                        for (const r of replacements) {
+                            editor.chain()
+                                .setTextSelection({ from: r.from, to: r.to })
+                                .insertContent(r.converted)
+                                .run();
+                        }
+
+                        const convTypes: string[] = [];
+                        if (convertNumbers) convTypes.push('numbers');
+                        if (convertLetters) convTypes.push('letters');
+                        if (convertSpace) convTypes.push('spaces');
+
+                        return `Converted ${replacements.length} text segment(s) from half-width to full-width (${convTypes.join(', ')}).`;
+                    }
+                } catch (error) {
+                    console.error('[convertToFullWidth] Error:', error);
+                    return `Failed to convert: ${error instanceof Error ? error.message : 'Unknown error'}`;
+                }
+            }
+        ),
+        createTool(
+            'acceptAllChanges',
+            'Accept all tracked changes (insertions and deletions) in the document, finalizing them as permanent content.',
+            {
+                type: 'object',
+                properties: {},
+                required: [],
+                additionalProperties: false
+            },
+            async () => {
+                const editor = getEditor();
+                if (!editor) throw new Error('Editor not initialized');
+
+                try {
+                    if (typeof editor.focus === 'function') editor.focus();
+
+                    if (typeof editor.commands.acceptAllChanges === 'function') {
+                        editor.commands.acceptAllChanges();
+                        return 'Accepted all tracked changes in the document.';
+                    } else {
+                        return 'acceptAllChanges command not available. Track changes extension may not be loaded.';
+                    }
+                } catch (error) {
+                    console.error('[acceptAllChanges] Error:', error);
+                    return `Failed to accept changes: ${error instanceof Error ? error.message : 'Unknown error'}`;
+                }
+            }
+        ),
+        createTool(
+            'rejectAllChanges',
+            'Reject all tracked changes (insertions and deletions) in the document, reverting to the original content.',
+            {
+                type: 'object',
+                properties: {},
+                required: [],
+                additionalProperties: false
+            },
+            async () => {
+                const editor = getEditor();
+                if (!editor) throw new Error('Editor not initialized');
+
+                try {
+                    if (typeof editor.focus === 'function') editor.focus();
+
+                    if (typeof editor.commands.rejectAllChanges === 'function') {
+                        editor.commands.rejectAllChanges();
+                        return 'Rejected all tracked changes in the document.';
+                    } else {
+                        return 'rejectAllChanges command not available. Track changes extension may not be loaded.';
+                    }
+                } catch (error) {
+                    console.error('[rejectAllChanges] Error:', error);
+                    return `Failed to reject changes: ${error instanceof Error ? error.message : 'Unknown error'}`;
+                }
+            }
         )
     ];
 };
