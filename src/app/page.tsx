@@ -7,6 +7,7 @@ import StatusBar from '@/components/layout/StatusBar';
 import FileExplorer from '@/components/explorer/FileExplorer';
 import EditorPanel from '@/components/editor/EditorPanel';
 import AgentPanel from '@/components/agent/AgentPanel';
+import PasswordGate from '@/components/auth/PasswordGate';
 import { Sparkles } from 'lucide-react';
 import styles from './page.module.css';
 
@@ -78,8 +79,10 @@ function IDELayout() {
 
 export default function Home() {
   return (
-    <WorkspaceProvider>
-      <IDELayout />
-    </WorkspaceProvider>
+    <PasswordGate>
+      <WorkspaceProvider>
+        <IDELayout />
+      </WorkspaceProvider>
+    </PasswordGate>
   );
 }
