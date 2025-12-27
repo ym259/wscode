@@ -1,15 +1,27 @@
-# SuperDoc Editor
+# WSCode
 
-An AI-powered document editor built with Next.js and [SuperDoc](https://github.com/harbour-enterprises/superdoc). Edit Word documents (`.docx`) directly in the browser with AI assistance for drafting, editing, and reviewing content.
+A VS Code-inspired IDE for document writing, built with Next.js. Edit Word documents (`.docx`) and Excel spreadsheets (`.xlsx`) directly in the browser with AI assistance for drafting, editing, and reviewing content.
 
 ## Features
 
-- 📄 **Native DOCX Editing** — Open and edit Word documents in the browser
-- 🤖 **AI Assistant** — Draft, edit, and review documents with AI help
-- 📁 **File Explorer** — Browse and manage files with native File System Access API
-- 🔄 **Track Changes** — Built-in track changes support via SuperDoc
-- 💾 **Auto-Persistence** — Open tabs persist across browser sessions
+### IDE Experience
+- � **File Explorer** — Browse and manage files with native File System Access API
+- 📑 **Tabbed Editing** — Work with multiple documents simultaneously
+- 💾 **Session Persistence** — Open tabs and workspace state persist across sessions
+- 🎨 **Activity Bar** — Quick access to explorer, AI assistant, and more
+
+### Document Editing
+- � **DOCX Editor** — Full-featured Word document editing with custom TipTap-based editor
+- 📊 **XLSX Editor** — Excel spreadsheet editing powered by FortuneSheet
+- 🔄 **Track Changes** — Built-in track changes with accept/reject capabilities
+- 💬 **Comments** — Add, view, and manage document comments
+- 📏 **Pagination** — Page-break aware editing with visual pagination
+- 🎨 **Rich Formatting** — Full toolbar with fonts, colors, alignment, and styles
+
+### AI Assistant
+- 🤖 **AI-Powered Editing** — Draft, edit, and review documents with OpenAI
 - ⌨️ **@ Mentions** — Reference files in AI conversations with `@filename`
+- 🔧 **Tool Calling** — AI can directly edit documents, search content, and more
 
 ## Getting Started
 
@@ -21,7 +33,7 @@ An AI-powered document editor built with Next.js and [SuperDoc](https://github.c
 ### Installation
 
 ```bash
-git clone <repo-url>
+git clone https://github.com/ym259/wscode.git
 cd editor
 npm install
 ```
@@ -58,7 +70,9 @@ npm start
 ## Technology Stack
 
 - **Framework**: [Next.js](https://nextjs.org) 16 (App Router)
-- **Editor**: [SuperDoc](https://github.com/harbour-enterprises/superdoc) (TipTap-based)
+- **Document Editor**: Custom TipTap-based editor with pagination
+- **Spreadsheet**: [FortuneSheet](https://github.com/ruilisi/fortune-sheet)
+- **DOCX Processing**: Mammoth, JSZip, docx.js
 - **AI**: OpenAI Responses API with tool calling
 - **Styling**: CSS Modules
 - **Icons**: [Lucide React](https://lucide.dev)
@@ -68,11 +82,14 @@ npm start
 ```
 src/
 ├── app/              # Next.js app router
-├── components/       # React components
+├── components/
 │   ├── agent/        # AI assistant panel
-│   ├── editor/       # Document editor
-│   ├── explorer/     # File explorer
-│   └── layout/       # UI chrome (activity bar, status bar)
+│   ├── editor/       # Document editors
+│   │   ├── custom-doc-editor/  # TipTap-based DOCX editor
+│   │   ├── hooks/    # Editor hooks (track changes, comments, etc.)
+│   │   └── toolbar/  # Formatting toolbar
+│   ├── explorer/     # File explorer sidebar
+│   └── layout/       # IDE chrome (activity bar, status bar)
 ├── contexts/         # React contexts
 ├── hooks/            # Shared hooks
 ├── services/         # Business logic
