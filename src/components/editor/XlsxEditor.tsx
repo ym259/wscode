@@ -42,13 +42,16 @@ export default function XlsxEditor({ file, fileName, handle }: XlsxEditorProps) 
         cell: string,
         value: string | number,
         sheetName?: string,
-        isNumber?: boolean
+        options?: boolean | { isNumber?: boolean; isFormula?: boolean; style?: Record<string, unknown> }
     ) => {
         const workbook = fortuneSheetRef.current;
         if (!workbook) {
             console.warn('[XlsxEditor] Fortune-sheet ref not available');
             return;
         }
+
+        // Normalize options (support boolean for backwards compat)
+        const opts = typeof options === 'boolean' ? { isNumber: options } : (options || {});
 
         // Parse cell address (e.g., "A7" -> row 6, col 0)
         const colMatch = cell.match(/^([A-Z]+)/i);
@@ -69,21 +72,33 @@ export default function XlsxEditor({ file, fileName, handle }: XlsxEditorProps) 
 
         const rowIdx = parseInt(rowMatch[1], 10) - 1; // 0-indexed
 
+        // Determine if value is a formula
+        const isFormula = opts.isFormula || (typeof value === 'string' && value.startsWith('='));
+
         // Determine value type
         let cellValue: string | number = value;
-        if (isNumber && typeof value === 'string') {
+        if (opts.isNumber && typeof value === 'string' && !isFormula) {
             const num = parseFloat(value);
             if (!isNaN(num)) cellValue = num;
         }
 
-        console.log(`[XlsxEditor] setCellValue: ${cell} (row=${rowIdx}, col=${colIdx}) = ${cellValue}`);
+        console.log(`[XlsxEditor] setCellValue: ${cell} (row=${rowIdx}, col=${colIdx}) = ${isFormula ? value : cellValue}`);
 
         // Call Fortune-sheet API
         try {
             if (workbook.setCellValue) {
-                workbook.setCellValue(rowIdx, colIdx, cellValue);
+                // FortuneSheet setCellValue: (row, col, value, options?)
+                // For formulas, we pass them as the value directly
+                workbook.setCellValue(rowIdx, colIdx, isFormula ? value : cellValue);
             } else {
                 console.warn('[XlsxEditor] setCellValue not available on workbook ref');
+            }
+
+            // Apply style if provided (using setCellFormat API)
+            if (opts.style && workbook.setCellFormat) {
+                for (const [attr, val] of Object.entries(opts.style)) {
+                    workbook.setCellFormat(rowIdx, colIdx, attr, val);
+                }
             }
         } catch (err) {
             console.error('[XlsxEditor] Error calling setCellValue:', err);

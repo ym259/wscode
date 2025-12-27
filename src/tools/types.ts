@@ -31,8 +31,8 @@ export interface ToolContext {
     activeFilePath?: string;
     activeFileHandle?: FileSystemFileHandle;
     superdoc?: any;
-    /** Callback for live cell updates in spreadsheets */
-    setCellValue?: (cell: string, value: string | number, sheetName?: string, isNumber?: boolean) => void;
+    /** Callback for live cell updates in spreadsheets. Options can be boolean (isNumber) for backwards compat or SetCellValueOptions */
+    setCellValue?: (cell: string, value: string | number, sheetName?: string, options?: boolean | { isNumber?: boolean; isFormula?: boolean; style?: Record<string, unknown> }) => void;
     /** Callback to open a file in the editor (switches active file) */
     openFileInEditor?: (path: string) => Promise<boolean>;
     /** OpenAI Configuration for sub-agents */

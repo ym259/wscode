@@ -38,7 +38,7 @@
     "react": "19.2.3",
     "react-dom": "19.2.3",
     "tiptap-pagination-plus": "^3.0.1",
-    "xlsx": "^0.18.5"
+    "xlsx-js-style": "^1.2.0"
   },
   "devDependencies": {
     "@testing-library/dom": "^10.4.1",

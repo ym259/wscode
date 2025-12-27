@@ -52,7 +52,7 @@ export const getSpreadsheetTools = (context: ToolContext): ToolDefinition[] => {
                 }
 
                 try {
-                    const XLSX = await import('xlsx');
+                    const XLSX = await import('xlsx-js-style');
                     const file = await handle.getFile();
                     const arrayBuffer = await file.arrayBuffer();
                     const workbook = XLSX.read(arrayBuffer, { type: 'array' });
@@ -195,6 +195,151 @@ export const getSpreadsheetTools = (context: ToolContext): ToolDefinition[] => {
                 }
 
                 return `Cleared row ${rowIndex} (${cols} columns).`;
+            }
+        ),
+
+        createTool(
+            'readSpreadsheetRange',
+            'Read a specific range of cells with detailed information including formulas and styles. Use to debug or understand existing spreadsheet logic.',
+            {
+                type: 'object',
+                properties: {
+                    range: {
+                        type: 'string',
+                        description: 'Cell range in A1 notation (e.g., "A1:C10")'
+                    },
+                    sheet: {
+                        type: 'string',
+                        description: 'Sheet name. Defaults to first sheet.'
+                    },
+                    includeFormulas: {
+                        type: 'boolean',
+                        description: 'If true, returns formula strings (e.g., "=SUM(A1:A5)") instead of computed values'
+                    },
+                    includeStyles: {
+                        type: 'boolean',
+                        description: 'If true, includes formatting info (bold, colors, number format)'
+                    }
+                },
+                required: ['range'],
+                additionalProperties: false
+            },
+            async ({ range, sheet, includeFormulas, includeStyles }: {
+                range: string;
+                sheet?: string;
+                includeFormulas?: boolean;
+                includeStyles?: boolean;
+            }) => {
+                // Parse range (e.g., "A1:C10" or "B5")
+                const rangeMatch = range.match(/^([A-Za-z]+)(\d+)(?::([A-Za-z]+)(\d+))?$/);
+                if (!rangeMatch) {
+                    return `Error: Invalid range "${range}". Use A1 notation (e.g., "A1:C10" or "B5").`;
+                }
+
+                const colToNum = (col: string): number => {
+                    let num = 0;
+                    const c = col.toUpperCase();
+                    for (let i = 0; i < c.length; i++) {
+                        num = num * 26 + (c.charCodeAt(i) - 64);
+                    }
+                    return num - 1;
+                };
+
+                const startCol = colToNum(rangeMatch[1]);
+                const startRow = parseInt(rangeMatch[2], 10) - 1;
+                const endCol = rangeMatch[3] ? colToNum(rangeMatch[3]) : startCol;
+                const endRow = rangeMatch[4] ? parseInt(rangeMatch[4], 10) - 1 : startRow;
+
+                // Find file handle
+                let handle: FileSystemFileHandle | null = null;
+                if (activeFileHandle) {
+                    handle = activeFileHandle;
+                } else if (workspaceFiles && activeFilePath) {
+                    handle = findFileHandle(workspaceFiles, activeFilePath);
+                }
+
+                if (!handle) {
+                    return 'Error: No spreadsheet file is currently open.';
+                }
+
+                try {
+                    const XLSX = await import('xlsx-js-style');
+                    const file = await handle.getFile();
+                    const arrayBuffer = await file.arrayBuffer();
+                    const workbook = XLSX.read(arrayBuffer, { type: 'array', cellStyles: true });
+
+                    const sheetName = sheet || workbook.SheetNames[0];
+                    const worksheet = workbook.Sheets[sheetName];
+                    if (!worksheet) {
+                        return `Error: Sheet "${sheetName}" not found. Available: ${workbook.SheetNames.join(', ')}`;
+                    }
+
+                    const colToLetter = (col: number): string => {
+                        let result = '';
+                        let c = col;
+                        while (c >= 0) {
+                            result = String.fromCharCode((c % 26) + 65) + result;
+                            c = Math.floor(c / 26) - 1;
+                        }
+                        return result;
+                    };
+
+                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                    const cells: Array<{ address: string; value: any; formula?: string; format?: string; style?: Record<string, unknown> }> = [];
+
+                    for (let row = startRow; row <= endRow; row++) {
+                        for (let col = startCol; col <= endCol; col++) {
+                            const addr = `${colToLetter(col)}${row + 1}`;
+                            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                            const cell = worksheet[addr] as any;
+
+                            if (cell) {
+                                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                                const cellInfo: any = { address: addr, value: cell.v };
+
+                                if (includeFormulas && cell.f) {
+                                    cellInfo.formula = `=${cell.f}`;
+                                }
+
+                                if (cell.z) {
+                                    cellInfo.format = cell.z;
+                                }
+
+                                if (includeStyles && cell.s) {
+                                    const style: Record<string, unknown> = {};
+                                    if (cell.s.font?.bold) style.bold = true;
+                                    if (cell.s.font?.italic) style.italic = true;
+                                    if (cell.s.font?.color?.rgb) style.fontColor = `#${cell.s.font.color.rgb}`;
+                                    if (cell.s.fill?.fgColor?.rgb) style.backgroundColor = `#${cell.s.fill.fgColor.rgb}`;
+                                    if (Object.keys(style).length > 0) {
+                                        cellInfo.style = style;
+                                    }
+                                }
+
+                                cells.push(cellInfo);
+                            }
+                        }
+                    }
+
+                    if (cells.length === 0) {
+                        return `Range ${range} is empty.`;
+                    }
+
+                    // Format output
+                    let result = `Range ${range} in "${sheetName}":\n\n`;
+                    cells.forEach(cell => {
+                        let line = `${cell.address}: ${JSON.stringify(cell.value)}`;
+                        if (cell.formula) line += ` [formula: ${cell.formula}]`;
+                        if (cell.format) line += ` [format: ${cell.format}]`;
+                        if (cell.style) line += ` [style: ${JSON.stringify(cell.style)}]`;
+                        result += line + '\n';
+                    });
+
+                    return result;
+                } catch (error) {
+                    console.error('[readSpreadsheetRange] Error:', error);
+                    return `Error reading range: ${error instanceof Error ? error.message : 'Unknown error'}`;
+                }
             }
         )
     ];
