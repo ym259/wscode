@@ -9,12 +9,15 @@
  * - InsertionMark: Track changes insertions
  * - DeletionMark: Track changes deletions
  * - CommentMark: DOCX comments highlighting
+ * - CustomParagraph: Extended paragraph with DOCX attributes
+ * - CustomHeading: Extended heading with styleId for DOCX roundtrip
  */
 
 import { Extension, Mark } from '@tiptap/core';
 import { Plugin, PluginKey } from '@tiptap/pm/state';
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import Paragraph from '@tiptap/extension-paragraph';
+import Heading from '@tiptap/extension-heading';
 
 // Generate unique ID for blocks
 export const generateId = () => Math.random().toString(36).substr(2, 9);
@@ -205,6 +208,118 @@ export const CustomParagraph = Paragraph.extend({
                 renderHTML: attributes => {
                     if (!attributes.snapToGrid) return {};
                     return { 'data-snap-to-grid': attributes.snapToGrid };
+                }
+            },
+            // Style ID for heading-style paragraphs (preserves original style for roundtrip)
+            styleId: {
+                default: null,
+                parseHTML: element => element.getAttribute('data-style-id'),
+                renderHTML: attributes => {
+                    if (!attributes.styleId) return {};
+                    return { 'data-style-id': attributes.styleId };
+                }
+            },
+            // Keep Next / Keep Lines (overrides style outline behavior)
+            keepNext: {
+                default: null,
+                parseHTML: element => element.getAttribute('data-keep-next'),
+                renderHTML: attributes => {
+                    if (attributes.keepNext === null) return {};
+                    return { 'data-keep-next': attributes.keepNext };
+                }
+            },
+            keepLines: {
+                default: null,
+                parseHTML: element => element.getAttribute('data-keep-lines'),
+                renderHTML: attributes => {
+                    if (attributes.keepLines === null) return {};
+                    return { 'data-keep-lines': attributes.keepLines };
+                }
+            },
+            // Paragraph default font properties for DOCX w:pPr/w:rPr
+            pPrFontSize: {
+                default: null,
+                parseHTML: element => element.getAttribute('data-ppr-font-size'),
+                renderHTML: attributes => {
+                    if (!attributes.pPrFontSize) return {};
+                    return { 'data-ppr-font-size': attributes.pPrFontSize };
+                }
+            },
+            pPrFontFamily: {
+                default: null,
+                parseHTML: element => element.getAttribute('data-ppr-font-family'),
+                renderHTML: attributes => {
+                    if (!attributes.pPrFontFamily) return {};
+                    return { 'data-ppr-font-family': attributes.pPrFontFamily };
+                }
+            },
+        };
+    },
+});
+
+// Custom Heading extension to support DOCX styleId for roundtrip fidelity
+export const CustomHeading = Heading.extend({
+    addAttributes() {
+        return {
+            ...this.parent?.(),
+            // Original DOCX style ID for roundtrip preservation (e.g., "4" instead of "Heading4")
+            styleId: {
+                default: null,
+                parseHTML: element => element.getAttribute('data-style-id'),
+                renderHTML: attributes => {
+                    if (!attributes.styleId) return {};
+                    return { 'data-style-id': attributes.styleId };
+                }
+            },
+            // Spacing attributes
+            spacingBefore: {
+                default: null,
+                parseHTML: element => element.getAttribute('data-spacing-before'),
+                renderHTML: attributes => {
+                    if (!attributes.spacingBefore) return {};
+                    return { 'data-spacing-before': attributes.spacingBefore };
+                }
+            },
+            spacingAfter: {
+                default: null,
+                parseHTML: element => element.getAttribute('data-spacing-after'),
+                renderHTML: attributes => {
+                    if (!attributes.spacingAfter) return {};
+                    return { 'data-spacing-after': attributes.spacingAfter };
+                }
+            },
+            // Paragraph default font properties for DOCX w:pPr/w:rPr
+            pPrFontSize: {
+                default: null,
+                parseHTML: element => element.getAttribute('data-ppr-font-size'),
+                renderHTML: attributes => {
+                    if (!attributes.pPrFontSize) return {};
+                    return { 'data-ppr-font-size': attributes.pPrFontSize };
+                }
+            },
+            pPrFontFamily: {
+                default: null,
+                parseHTML: element => element.getAttribute('data-ppr-font-family'),
+                renderHTML: attributes => {
+                    if (!attributes.pPrFontFamily) return {};
+                    return { 'data-ppr-font-family': attributes.pPrFontFamily };
+                }
+            },
+            // Keep Next / Keep Lines (overrides style outline behavior)
+            keepNext: {
+                default: null,
+                parseHTML: element => element.getAttribute('data-keep-next'),
+                renderHTML: attributes => {
+                    if (attributes.keepNext === null) return {};
+                    return { 'data-keep-next': attributes.keepNext };
+                }
+            },
+            keepLines: {
+                default: null,
+                parseHTML: element => element.getAttribute('data-keep-lines'),
+                renderHTML: attributes => {
+                    if (attributes.keepLines === null) return {};
+                    return { 'data-keep-lines': attributes.keepLines };
                 }
             },
         };

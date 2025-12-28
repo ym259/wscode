@@ -218,16 +218,14 @@ export class DocxReader {
             return [];
         });
 
-        // Filter out empty paragraphs that may result from sdt extraction
-        const filteredChildren = rawChildren.filter((node: any) => {
-            if (node.type === 'paragraph' && (!node.content || node.content.length === 0)) {
-                return false; // Remove empty paragraphs
-            }
-            return true;
-        });
+
+        // NOTE: We no longer filter out empty paragraphs as they represent
+        // intentional blank lines in the document and carry spacing attributes.
+        // Previously this was: filteredChildren = rawChildren.filter(...)
+        // which caused paragraphs and their spacing to be lost.
 
         // Group consecutive list items into list structures
-        const children = this.groupListItems(filteredChildren);
+        const children = this.groupListItems(rawChildren);
 
         const result: any = {
             type: 'doc',
@@ -254,6 +252,18 @@ export class DocxReader {
             if (pgMar) {
                 result.attrs.pageMargins = pgMar[':@'];
             }
+
+            // Extract columns
+            const cols = sectPr.find((x: any) => x['w:cols'] || x['cols']);
+            if (cols) {
+                result.attrs.cols = cols[':@'];
+            }
+
+            // Capture all children of sectPr to preserve headers, footers, etc.
+            result.attrs.sectPrElements = sectPr.filter((x: any) => {
+                const key = Object.keys(x)[0];
+                return key !== ':@';
+            });
         }
 
         if (this.docDefaults) {
@@ -465,6 +475,47 @@ export class DocxReader {
         // Track active comment IDs for this paragraph
         const activeCommentIds: string[] = [];
         let hasPageBreak = false;
+        // Paragraph default run properties (from w:pPr/w:rPr)
+        const paragraphDefaults: { fontSize?: string; fontFamily?: string } = {};
+
+        // First pass: extract paragraph defaults from w:pPr/w:rPr
+        nodeContent.forEach(item => {
+            const keys = Object.keys(item);
+            const pPrKey = keys.find(k => k === 'w:pPr' || k === 'pPr');
+            if (pPrKey) {
+                const pPr = item[pPrKey];
+                pPr.forEach((prop: any) => {
+                    const propKey = Object.keys(prop)[0];
+                    // Look for rPr inside pPr (paragraph default run properties)
+                    if (propKey === 'w:rPr' || propKey === 'rPr') {
+                        const rPr = prop[propKey];
+                        rPr.forEach((rProp: any) => {
+                            const rPropKey = Object.keys(rProp)[0];
+                            // Font size
+                            if (rPropKey === 'w:sz' || rPropKey === 'sz') {
+                                const val = rProp[':@']?.['w:val'] || rProp[':@']?.['val'];
+                                if (val) paragraphDefaults.fontSize = `${parseInt(val) / 2}pt`;
+                            }
+                            // Font family
+                            if (rPropKey === 'w:rFonts' || rPropKey === 'rFonts') {
+                                const eastAsia = rProp[':@']?.['w:eastAsia'] || rProp[':@']?.['eastAsia'];
+                                const ascii = rProp[':@']?.['w:ascii'] || rProp[':@']?.['ascii'];
+                                if (eastAsia) paragraphDefaults.fontFamily = eastAsia;
+                                else if (ascii) paragraphDefaults.fontFamily = ascii;
+                            }
+                        });
+                    }
+                });
+            }
+        });
+
+        // Store paragraph defaults as attrs for serialization
+        if (paragraphDefaults.fontSize) {
+            attrs.pPrFontSize = paragraphDefaults.fontSize;
+        }
+        if (paragraphDefaults.fontFamily) {
+            attrs.pPrFontFamily = paragraphDefaults.fontFamily;
+        }
 
         nodeContent.forEach(item => {
             const keys = Object.keys(item);
@@ -532,6 +583,9 @@ export class DocxReader {
                     if (propKey === 'w:pStyle' || propKey === 'pStyle') {
                         const val = prop[':@']?.['w:val'] || prop[':@']?.['val'];
                         if (val) {
+                            // Store original style ID for roundtrip preservation
+                            attrs.styleId = val;
+
                             const styleDef = this.stylesMap[val];
                             // Check 1: Style Name (e.g. "Heading 1")
                             if (styleDef && styleDef.name && styleDef.name.toLowerCase().startsWith('heading')) {
@@ -604,6 +658,19 @@ export class DocxReader {
                         if (val) attrs.snapToGrid = val;
                     }
 
+                    // Keep Next (prevents page break between this and next paragraph)
+                    if (propKey === 'w:keepNext' || propKey === 'keepNext') {
+                        const val = prop[':@']?.['w:val'] || prop[':@']?.['val'];
+                        // w:keepNext without val means true, w:keepNext w:val="0" means false
+                        attrs.keepNext = val === '0' ? '0' : '1';
+                    }
+
+                    // Keep Lines (prevents page break within paragraph)
+                    if (propKey === 'w:keepLines' || propKey === 'keepLines') {
+                        const val = prop[':@']?.['w:val'] || prop[':@']?.['val'];
+                        attrs.keepLines = val === '0' ? '0' : '1';
+                    }
+
                     // Shading (Background)
                     if (propKey === 'w:shd' || propKey === 'shd') {
                         const fill = prop[':@']?.['w:fill'] || prop[':@']?.['fill'];
@@ -633,7 +700,7 @@ export class DocxReader {
 
             if (rKey) {
                 // Pass active comment IDs to parseRun
-                const runNodes = this.parseRun(item[rKey], undefined, activeCommentIds.length > 0 ? [...activeCommentIds] : undefined);
+                const runNodes = this.parseRun(item[rKey], undefined, activeCommentIds.length > 0 ? [...activeCommentIds] : undefined, Object.keys(paragraphDefaults).length > 0 ? paragraphDefaults : undefined);
                 children.push(...runNodes);
             }
 
@@ -654,7 +721,7 @@ export class DocxReader {
                             type: 'insertion',
                             author,
                             date
-                        }, activeCommentIds.length > 0 ? [...activeCommentIds] : undefined);
+                        }, activeCommentIds.length > 0 ? [...activeCommentIds] : undefined, Object.keys(paragraphDefaults).length > 0 ? paragraphDefaults : undefined);
                         children.push(...runNodes);
                     }
                 });
@@ -677,7 +744,7 @@ export class DocxReader {
                             type: 'deletion',
                             author,
                             date
-                        }, activeCommentIds.length > 0 ? [...activeCommentIds] : undefined);
+                        }, activeCommentIds.length > 0 ? [...activeCommentIds] : undefined, Object.keys(paragraphDefaults).length > 0 ? paragraphDefaults : undefined);
                         children.push(...runNodes);
                     }
                 });
@@ -749,11 +816,13 @@ export class DocxReader {
 
         const validChildren = children.filter(c => c);
 
-        // Heuristic removed to improve round-trip fidelity. 
-        // We should trust the original document's styles/levels.
-        // If it's a paragraph in Word, it should stay a paragraph in Tiptap/Export.
-
-        const finalType = attrs.level ? 'heading' : 'paragraph';
+        // IMPORTANT: For roundtrip fidelity, all DOCX paragraphs should remain as 'paragraph' type.
+        // The original document uses <w:p> elements with <w:pStyle> to apply heading styles.
+        // We preserve the styleId for serialization, but keep the node type as 'paragraph'.
+        // This ensures the exported document has the same structure as the original.
+        // If we convert to 'heading' type, the serializer would use serializeHeading() which
+        // may produce different XML structure than the original paragraph.
+        const finalType = 'paragraph';
 
         // If this is a list item, include listInfo for grouping
         const result: any = {
@@ -780,7 +849,8 @@ export class DocxReader {
     private parseRun(
         runContent: any[],
         trackChange?: { type: 'insertion' | 'deletion'; author: string; date: string },
-        commentIds?: string[]
+        commentIds?: string[],
+        paragraphDefaults?: { fontSize?: string; fontFamily?: string }
     ): any[] {
         const nodes: any[] = [];
         let currentText = '';
@@ -816,7 +886,14 @@ export class DocxReader {
         }
 
         // First pass: collect marks from rPr
+        // Start with paragraph defaults (from w:pPr/w:rPr), run-level properties will override
         const textStyleAttrs: any = {};
+        if (paragraphDefaults?.fontSize) {
+            textStyleAttrs.fontSize = paragraphDefaults.fontSize;
+        }
+        if (paragraphDefaults?.fontFamily) {
+            textStyleAttrs.fontFamily = paragraphDefaults.fontFamily;
+        }
         runContent.forEach(item => {
             const keys = Object.keys(item);
             const rPrKey = keys.find(k => k === 'w:rPr' || k === 'rPr');

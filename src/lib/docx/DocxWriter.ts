@@ -1,5 +1,5 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 import JSZip from 'jszip';
+import { XMLBuilder } from 'fast-xml-parser';
 
 /**
  * Tiptap JSON content type
@@ -175,8 +175,16 @@ export class DocxWriter {
         const bodyContent = content.map(node => this.serializeNode(node, 0)).join('');
 
         let sectPr = '';
-        // If we have captured section properties, use them for fidelity
-        if (docAttrs && (docAttrs.pageSize || docAttrs.pageMargins || docAttrs.docGrid)) {
+        // If we have captured section properties, use them for fidelity (headers, footers, etc.)
+        if (docAttrs && docAttrs.sectPrElements) {
+            const builder = new XMLBuilder({
+                ignoreAttributes: false,
+                attributeNamePrefix: '',
+                preserveOrder: true,
+                suppressEmptyNode: true,
+            });
+            sectPr = `<w:sectPr>${builder.build(docAttrs.sectPrElements)}</w:sectPr>`;
+        } else if (docAttrs && (docAttrs.pageSize || docAttrs.pageMargins || docAttrs.docGrid)) {
             sectPr += '<w:sectPr>';
 
             // Page Size
@@ -184,8 +192,6 @@ export class DocxWriter {
                 const w = docAttrs.pageSize['w:w'] || docAttrs.pageSize['w'] || '11906';
                 const h = docAttrs.pageSize['w:h'] || docAttrs.pageSize['h'] || '16838';
                 sectPr += `<w:pgSz w:w="${w}" w:h="${h}"/>`;
-            } else {
-                sectPr += `<w:pgSz w:w="11906" w:h="16838"/>`;
             }
 
             // Page Margins
@@ -198,28 +204,25 @@ export class DocxWriter {
                 const footer = docAttrs.pageMargins['w:footer'] || '708';
                 const gutter = docAttrs.pageMargins['w:gutter'] || '0';
                 sectPr += `<w:pgMar w:top="${top}" w:right="${right}" w:bottom="${bottom}" w:left="${left}" w:header="${header}" w:footer="${footer}" w:gutter="${gutter}"/>`;
-            } else {
-                sectPr += `<w:pgMar w:top="1985" w:right="1701" w:bottom="1701" w:left="1701" w:header="708" w:footer="708" w:gutter="0"/>`;
             }
 
-            // Columns (default to 1)
-            sectPr += `<w:cols w:space="708"/>`;
+            // Columns - Keep only if present in original
+            if (docAttrs.cols) {
+                const space = docAttrs.cols['w:space'] || '720';
+                sectPr += `<w:cols w:space="${space}"/>`;
+            }
 
-            // Document Grid - Critical for Japanese spacing
+            // Document Grid - Keep only if present in original
             if (docAttrs.docGrid) {
                 const linePitch = docAttrs.docGrid['w:linePitch'] || '360';
                 const type = docAttrs.docGrid['w:type'] || 'lines';
                 sectPr += `<w:docGrid w:linePitch="${linePitch}" w:type="${type}"/>`;
-            } else {
-                // Formatting fallback: If we have page size but missed docGrid, default to standard CJK grid
-                // to prevent Word from defaulting to a behavior that breaks line spacing.
-                sectPr += `<w:docGrid w:linePitch="360" w:type="lines"/>`;
             }
 
             sectPr += '</w:sectPr>';
         } else {
-            // Default A4 if no attributes captured
-            sectPr = `<w:sectPr><w:pgSz w:w="11906" w:h="16838"/><w:pgMar w:top="1985" w:right="1701" w:bottom="1701" w:left="1701" w:header="708" w:footer="708" w:gutter="0"/><w:cols w:space="708"/><w:docGrid w:linePitch="360" w:type="lines"/></w:sectPr>`;
+            // Minimal A4 if no attributes captured
+            sectPr = `<w:sectPr><w:pgSz w:w="11906" w:h="16838"/><w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440" w:header="720" w:footer="720" w:gutter="0"/></w:sectPr>`;
         }
 
         return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
@@ -272,9 +275,23 @@ ${sectPr}
     private serializeParagraph(node: JSONContent, listInfo?: { numId: number; ilvl: number }): string {
         let pPr = '';
 
+        // Add paragraph style if present (for heading-style paragraphs)
+        if (node.attrs?.styleId) {
+            pPr += `<w:pStyle w:val="${node.attrs.styleId}"/>`;
+        }
+
         // Add list properties if this is a list item
         if (listInfo) {
             pPr += `<w:numPr><w:ilvl w:val="${listInfo.ilvl}"/><w:numId w:val="${listInfo.numId}"/></w:numPr>`;
+        }
+
+        // Keep with next / keep lines together (overrides style outline behavior)
+        // Only output if explicitly set in the original document (not null or undefined)
+        if (node.attrs?.keepNext != null) {
+            pPr += `<w:keepNext w:val="${node.attrs.keepNext}"/>`;
+        }
+        if (node.attrs?.keepLines != null) {
+            pPr += `<w:keepLines w:val="${node.attrs.keepLines}"/>`;
         }
 
         // Add spacing (lineHeight, spacingBefore, spacingAfter)
@@ -342,6 +359,25 @@ ${sectPr}
             pPr += `<w:contextualSpacing w:val="${node.attrs.contextualSpacing}"/>`;
         }
 
+        // Add paragraph default run properties (w:rPr inside w:pPr)
+        if (node.attrs?.pPrFontSize || node.attrs?.pPrFontFamily) {
+            let rPr = '';
+            if (node.attrs?.pPrFontFamily) {
+                const font = this.escapeXml(node.attrs.pPrFontFamily);
+                rPr += `<w:rFonts w:ascii="${font}" w:eastAsia="${font}" w:hAnsi="${font}" w:cs="${font}"/>`;
+            }
+            if (node.attrs?.pPrFontSize) {
+                // Convert from pt to half-points
+                const ptVal = parseFloat(node.attrs.pPrFontSize.replace('pt', ''));
+                const halfPts = Math.round(ptVal * 2);
+                rPr += `<w:sz w:val="${halfPts}"/>`;
+                rPr += `<w:szCs w:val="${halfPts}"/>`;
+            }
+            if (rPr) {
+                pPr += `<w:rPr>${rPr}</w:rPr>`;
+            }
+        }
+
         const pPrXml = pPr ? `<w:pPr>${pPr}</w:pPr>` : '';
         const content = this.serializeParagraphContent(node.content || []);
 
@@ -367,10 +403,21 @@ ${sectPr}
         const level = node.attrs?.level || 1;
         const content = this.serializeParagraphContent(node.content || []);
 
-        let pPr = `<w:pStyle w:val="Heading${level}"/>`;
+        // Use original style ID if available, otherwise generate from level
+        const styleId = node.attrs?.styleId || `Heading${level}`;
+        let pPr = `<w:pStyle w:val="${styleId}"/>`;
 
         if (node.attrs?.snapToGrid) {
             pPr += `<w:snapToGrid w:val="${node.attrs.snapToGrid}"/>`;
+        }
+
+        // Keep with next / keep lines together (overrides style outline behavior)
+        // Only output if explicitly set in the original document (not null or undefined)
+        if (node.attrs?.keepNext != null) {
+            pPr += `<w:keepNext w:val="${node.attrs.keepNext}"/>`;
+        }
+        if (node.attrs?.keepLines != null) {
+            pPr += `<w:keepLines w:val="${node.attrs.keepLines}"/>`;
         }
 
         // Add spacing (lineHeight, spacingBefore, spacingAfter)
