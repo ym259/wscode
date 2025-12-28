@@ -247,7 +247,6 @@ export const EditorToolbar: React.FC<EditorToolbarProps> = ({
                             cursor: 'pointer',
                             backgroundColor: '#fff',
                             minWidth: '90px',
-                            color: '#333',
                         }}
                         title="Font Family"
                     >
@@ -263,7 +262,7 @@ export const EditorToolbar: React.FC<EditorToolbarProps> = ({
                     </select>
 
                     <select
-                        value={editor?.getAttributes('textStyle').fontSize?.replace('pt', '') || '11'}
+                        value={editor?.getAttributes('textStyle').fontSize?.replace('pt', '') || '12'}
                         onChange={(e) => editor?.chain().focus().setFontSize(`${e.target.value}pt`).run()}
                         style={{
                             padding: '4px 8px',
@@ -273,7 +272,6 @@ export const EditorToolbar: React.FC<EditorToolbarProps> = ({
                             cursor: 'pointer',
                             backgroundColor: '#fff',
                             minWidth: '50px',
-                            color: '#333',
                         }}
                         title="Font Size"
                     >
@@ -512,7 +510,6 @@ export const EditorToolbar: React.FC<EditorToolbarProps> = ({
                                 cursor: 'pointer',
                                 backgroundColor: '#fff',
                                 minWidth: '120px',
-                                color: '#333',
                             }}
                             title="Track Changes Display Mode"
                         >
