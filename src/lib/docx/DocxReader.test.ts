@@ -113,7 +113,8 @@ describe('DocxReader', () => {
         const buffer = await createMockDocx(content, styles);
         const result = await reader.load(buffer);
 
-        expect(result.content[0].type).toBe('paragraph');
+        expect(result.content[0].type).toBe('heading');
+        expect(result.content[0].attrs.level).toBe(1);
         expect(result.content[0].attrs.styleId).toBe('Heading1');
     });
 

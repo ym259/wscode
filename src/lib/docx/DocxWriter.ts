@@ -1,5 +1,5 @@
 import JSZip from 'jszip';
-import { XMLBuilder } from 'fast-xml-parser';
+import { XMLBuilder, XMLParser } from 'fast-xml-parser';
 
 /**
  * Tiptap JSON content type
@@ -111,8 +111,6 @@ export class DocxWriter {
             if (!zip.file('word/styles.xml')) {
                 zip.file('word/styles.xml', this.getStylesXml(content.attrs));
             }
-            // For now, we trust existing document.xml.rels to contain necessary relationships
-            // TODO: If we start adding images/hyperlinks, we MUST parse and merge .rels
         }
 
         zip.file('word/document.xml', documentXml);
@@ -145,8 +143,20 @@ export class DocxWriter {
             zip.file('word/comments.xml', this.serializeComments());
         }
 
+        if (this.originalZip) {
+            // Update [Content_Types].xml if needed
+            await this.updateContentTypesXml(zip);
+
+            // Update word/_rels/document.xml.rels if needed
+            await this.updateDocumentRelsXml(zip);
+        }
+
         // Generate blob
-        return zip.generateAsync({ type: 'blob', mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' });
+        return zip.generateAsync({
+            type: 'blob',
+            mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            compression: 'DEFLATE'
+        });
     }
 
     /**
@@ -798,50 +808,221 @@ ${relationships}
                 }
             }
 
-            if (rPrInner || pPrInner) {
-                docDefaults = `<w:docDefaults>`;
-                if (rPrInner) {
-                    docDefaults += `<w:rPrDefault><w:rPr>${rPrInner}</w:rPr></w:rPrDefault>`;
-                }
-                if (pPrInner) {
-                    docDefaults += `<w:pPrDefault><w:pPr>${pPrInner}</w:pPr></w:pPrDefault>`;
-                }
-                docDefaults += `</w:docDefaults>`;
+            if (rPrInner) {
+                docDefaults += `<w:rPrDefault><w:rPr>${rPrInner}</w:rPr></w:rPrDefault>`;
+            }
+            if (pPrInner) {
+                docDefaults += `<w:pPrDefault><w:pPr>${pPrInner}</w:pPr></w:pPrDefault>`;
             }
         }
 
         return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
-${docDefaults}
-<w:style w:type="paragraph" w:styleId="Normal" w:default="1">
+<w:styles xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:w14="http://schemas.microsoft.com/office/word/2010/wordml" xmlns:w15="http://schemas.microsoft.com/office/word/2012/wordml" mc:Ignorable="w14 w15">
+<w:docDefaults>${docDefaults}</w:docDefaults>
+<w:style w:type="paragraph" w:styleId="Normal">
 <w:name w:val="Normal"/>
-<w:rPr/>
+<w:qFormat/>
 </w:style>
 <w:style w:type="paragraph" w:styleId="Heading1">
 <w:name w:val="Heading 1"/>
 <w:basedOn w:val="Normal"/>
-<w:pPr><w:outlineLvl w:val="0"/></w:pPr>
-<w:rPr><w:b/><w:sz w:val="32"/></w:rPr>
+<w:next w:val="Normal"/>
+<w:link w:val="Heading1Char"/>
+<w:uiPriority w:val="9"/>
+<w:qFormat/>
+<w:rsid w:val="00F17435"/>
+<w:pPr>
+<w:keepNext/>
+<w:keepLines/>
+<w:spacing w:before="480" w:after="0"/>
+<w:outlineLvl w:val="0"/>
+</w:pPr>
+<w:rPr>
+<w:rFonts w:asciiTheme="majorHAnsi" w:eastAsiaTheme="majorEastAsia" w:hAnsiTheme="majorHAnsi" w:cstheme="majorBidi"/>
+<w:b/>
+<w:bCs/>
+<w:color w:val="2E74B5" w:themeColor="accent1" w:themeShade="BF"/>
+<w:sz w:val="32"/>
+<w:szCs w:val="32"/>
+</w:rPr>
 </w:style>
 <w:style w:type="paragraph" w:styleId="Heading2">
 <w:name w:val="Heading 2"/>
 <w:basedOn w:val="Normal"/>
-<w:pPr><w:outlineLvl w:val="1"/></w:pPr>
-<w:rPr><w:b/><w:sz w:val="28"/></w:rPr>
+<w:next w:val="Normal"/>
+<w:link w:val="Heading2Char"/>
+<w:uiPriority w:val="9"/>
+<w:unhideWhenUsed/>
+<w:qFormat/>
+<w:rsid w:val="00F17435"/>
+<w:pPr>
+<w:keepNext/>
+<w:keepLines/>
+<w:spacing w:before="260" w:after="260"/>
+<w:outlineLvl w:val="1"/>
+</w:pPr>
+<w:rPr>
+<w:rFonts w:asciiTheme="majorHAnsi" w:eastAsiaTheme="majorEastAsia" w:hAnsiTheme="majorHAnsi" w:cstheme="majorBidi"/>
+<w:b/>
+<w:bCs/>
+<w:color w:val="2E74B5" w:themeColor="accent1" w:themeShade="BF"/>
+<w:sz w:val="26"/>
+<w:szCs w:val="26"/>
+</w:rPr>
 </w:style>
 <w:style w:type="paragraph" w:styleId="Heading3">
 <w:name w:val="Heading 3"/>
 <w:basedOn w:val="Normal"/>
-<w:pPr><w:outlineLvl w:val="2"/></w:pPr>
-<w:rPr><w:b/><w:sz w:val="24"/></w:rPr>
-</w:style>
-<w:style w:type="paragraph" w:styleId="ListParagraph">
-<w:name w:val="List Paragraph"/>
-<w:basedOn w:val="Normal"/>
-<w:pPr><w:ind w:left="720"/></w:pPr>
+<w:next w:val="Normal"/>
+<w:link w:val="Heading3Char"/>
+<w:uiPriority w:val="9"/>
+<w:unhideWhenUsed/>
+<w:qFormat/>
+<w:rsid w:val="00F17435"/>
+<w:pPr>
+<w:keepNext/>
+<w:keepLines/>
+<w:spacing w:before="260" w:after="260"/>
+<w:outlineLvl w:val="2"/>
+</w:pPr>
+<w:rPr>
+<w:rFonts w:asciiTheme="majorHAnsi" w:eastAsiaTheme="majorEastAsia" w:hAnsiTheme="majorHAnsi" w:cstheme="majorBidi"/>
+<w:b/>
+<w:bCs/>
+<w:color w:val="1F4D78" w:themeColor="accent1" w:themeShade="7F"/>
+<w:sz w:val="24"/>
+<w:szCs w:val="24"/>
+</w:rPr>
 </w:style>
 </w:styles>`;
     }
+
+    /**
+     * Update [Content_Types].xml logic
+     */
+    private async updateContentTypesXml(zip: JSZip): Promise<void> {
+        const contentTypesXml = await zip.file('[Content_Types].xml')?.async('string');
+        if (!contentTypesXml) return;
+
+        const parser = new XMLParser({
+            ignoreAttributes: false,
+            attributeNamePrefix: '',
+        });
+        const contentTypes = parser.parse(contentTypesXml);
+
+        // Ensure <Types> exists and has Overrides
+        if (!contentTypes.Types) return;
+
+        // Ensure Overrides is always an array
+        let overrides = contentTypes.Types.Override || [];
+        if (!Array.isArray(overrides)) {
+            overrides = [overrides];
+        }
+
+        const existingParts = new Set<string>(overrides.map((o: any) => o.PartName));
+        let modified = false;
+
+        // Check for numbering.xml
+        if (zip.file('word/numbering.xml') && !existingParts.has('/word/numbering.xml')) {
+            overrides.push({
+                PartName: '/word/numbering.xml',
+                ContentType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.numbering+xml'
+            });
+            modified = true;
+        }
+
+        // Check for comments.xml
+        if (this.comments.length > 0 && !existingParts.has('/word/comments.xml')) {
+            overrides.push({
+                PartName: '/word/comments.xml',
+                ContentType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.comments+xml'
+            });
+            modified = true;
+        }
+
+        if (modified) {
+            contentTypes.Types.Override = overrides;
+            const builder = new XMLBuilder({
+                ignoreAttributes: false,
+                attributeNamePrefix: '',
+                format: true,
+                suppressEmptyNode: true,
+            });
+            zip.file('[Content_Types].xml', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n${builder.build(contentTypes)}`);
+        }
+    }
+
+    /**
+     * Update word/_rels/document.xml.rels logic
+     */
+    private async updateDocumentRelsXml(zip: JSZip): Promise<void> {
+        const relsXml = await zip.file('word/_rels/document.xml.rels')?.async('string');
+        if (!relsXml) return;
+
+        const parser = new XMLParser({
+            ignoreAttributes: false,
+            attributeNamePrefix: '',
+        });
+        const rels = parser.parse(relsXml);
+
+        if (!rels.Relationships) return;
+
+        let relationships = rels.Relationships.Relationship || [];
+        if (!Array.isArray(relationships)) {
+            relationships = [relationships];
+        }
+
+        // Get max rId
+        let maxId = 0;
+        const existingTargets = new Set<string>();
+
+        relationships.forEach((rel: any) => {
+            if (rel.Id && rel.Id.startsWith('rId')) {
+                const id = parseInt(rel.Id.substring(3));
+                if (!isNaN(id) && id > maxId) maxId = id;
+            }
+            if (rel.Target) {
+                existingTargets.add(rel.Target);
+            }
+        });
+
+        let modified = false;
+
+        // Add numbering relationship if needed
+        if (zip.file('word/numbering.xml') && !existingTargets.has('numbering.xml')) {
+            maxId++;
+            relationships.push({
+                Id: `rId${maxId}`,
+                Type: 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/numbering',
+                Target: 'numbering.xml'
+            });
+            modified = true;
+        }
+
+        // Add comments relationship if needed
+        if (this.comments.length > 0 && !existingTargets.has('comments.xml')) {
+            maxId++;
+            relationships.push({
+                Id: `rId${maxId}`,
+                Type: 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/comments',
+                Target: 'comments.xml'
+            });
+            modified = true;
+        }
+
+        if (modified) {
+            rels.Relationships.Relationship = relationships;
+            const builder = new XMLBuilder({
+                ignoreAttributes: false,
+                attributeNamePrefix: '',
+                format: true,
+                suppressEmptyNode: true,
+            });
+            zip.file('word/_rels/document.xml.rels', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n${builder.build(rels)}`);
+        }
+    }
+
+
 
     /**
     * Get word/numbering.xml - defines list numbering formats

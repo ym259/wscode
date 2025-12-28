@@ -822,7 +822,8 @@ export class DocxReader {
         // This ensures the exported document has the same structure as the original.
         // If we convert to 'heading' type, the serializer would use serializeHeading() which
         // may produce different XML structure than the original paragraph.
-        const finalType = 'paragraph';
+        // UPDATE: User confirmed they want 'heading' type if it resolves to a heading level.
+        const finalType = attrs.level !== undefined ? 'heading' : 'paragraph';
 
         // If this is a list item, include listInfo for grouping
         const result: any = {
