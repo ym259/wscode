@@ -39,6 +39,17 @@ interface WorkspaceContextType extends WorkspaceState {
     attachedSelection: AttachedSelection | null;
     setAttachedSelection: (selection: AttachedSelection | null) => void;
     clearAttachedSelection: () => void;
+    // Outline Support
+    activeOutline: OutlineItem[];
+    setActiveOutline: (outline: OutlineItem[]) => void;
+    navRequest: string | null;
+    setNavRequest: (id: string | null) => void;
+}
+
+export interface OutlineItem {
+    id: string; // The block ID or header ID
+    text: string;
+    level: number; // 1-6
 }
 
 const WorkspaceContext = createContext<WorkspaceContextType | null>(null);
@@ -52,6 +63,8 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     const [aiActionHandler, setAIActionHandler] = useState<AIActionHandler | null>(null);
     const [voiceToolHandler, setVoiceToolHandler] = useState<VoiceToolHandler | null>(null);
     const [attachedSelection, setAttachedSelectionState] = useState<AttachedSelection | null>(null);
+    const [activeOutline, setActiveOutline] = useState<OutlineItem[]>([]);
+    const [navRequest, setNavRequest] = useState<string | null>(null);
 
     // Load workspace state from IDB on mount
     useEffect(() => {
@@ -262,6 +275,10 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
                 attachedSelection,
                 setAttachedSelection,
                 clearAttachedSelection,
+                activeOutline,
+                setActiveOutline,
+                navRequest,
+                setNavRequest,
             }}
         >
             {children}

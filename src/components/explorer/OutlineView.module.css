@@ -1,0 +1,166 @@
+.container {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    background: var(--bg-sidebar);
+    min-height: 0;
+    flex: 1;
+}
+
+.container.collapsed {
+    flex: 0 0 auto !important;
+    height: auto !important;
+    min-height: 0 !important;
+}
+
+.resizeHandle {
+    height: 4px;
+    cursor: ns-resize;
+    background: transparent;
+    border-top: 1px solid var(--border-color);
+    flex-shrink: 0;
+    transition: background var(--transition-fast);
+}
+
+.resizeHandle:hover {
+    background: var(--accent-primary);
+}
+
+.header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: var(--spacing-sm) var(--spacing-md);
+    cursor: pointer;
+    font-size: var(--font-size-xs);
+    font-weight: 600;
+    letter-spacing: 0.5px;
+    color: var(--text-secondary);
+    flex-shrink: 0;
+    user-select: none;
+    border-top: 1px solid var(--border-color);
+}
+
+.container.collapsed .header {
+    border-top: 1px solid var(--border-color);
+}
+
+.header:hover {
+    color: var(--text-primary);
+    background: var(--bg-hover);
+}
+
+.headerLeft {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-xs);
+}
+
+.itemCount {
+    font-size: var(--font-size-xs);
+    color: var(--text-muted);
+    background: var(--bg-tertiary, rgba(255, 255, 255, 0.05));
+    padding: 2px 6px;
+    border-radius: 10px;
+    font-weight: 500;
+}
+
+.content {
+    flex: 1;
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding: var(--spacing-xs) 0;
+}
+
+.item {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    padding: 3px var(--spacing-sm);
+    cursor: pointer;
+    color: var(--text-secondary);
+    font-size: var(--font-size-sm);
+    line-height: 1.4;
+    transition: background var(--transition-fast);
+    min-height: 24px;
+}
+
+.item:hover {
+    background: var(--bg-hover);
+}
+
+.chevronButton {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    padding: 0;
+    border: none;
+    background: transparent;
+    color: var(--text-muted);
+    cursor: pointer;
+    border-radius: 3px;
+    flex-shrink: 0;
+    transition: all var(--transition-fast);
+}
+
+.chevronButton:hover {
+    background: var(--bg-hover);
+    color: var(--text-primary);
+}
+
+.chevronPlaceholder {
+    width: 18px;
+    height: 18px;
+    flex-shrink: 0;
+}
+
+.itemText {
+    flex: 1;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    cursor: pointer;
+    padding: 2px 4px;
+    border-radius: 3px;
+    transition: all var(--transition-fast);
+}
+
+.itemText:hover {
+    background: var(--accent-primary);
+    color: var(--text-bright);
+}
+
+/* Level-based styling for visual hierarchy */
+.level1 {
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.level2 {
+    font-weight: 500;
+    color: var(--text-primary);
+}
+
+.level3 {
+    font-weight: 500;
+    color: var(--text-secondary);
+}
+
+.level4 {
+    font-weight: 400;
+    color: var(--text-secondary);
+}
+
+.level5 {
+    font-weight: 400;
+    color: var(--text-muted);
+    font-size: calc(var(--font-size-sm) - 1px);
+}
+
+.level6 {
+    font-weight: 400;
+    color: var(--text-muted);
+    font-size: calc(var(--font-size-sm) - 1px);
+}

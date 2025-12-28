@@ -1,10 +1,11 @@
 'use client';
 
 import React, { useState, useCallback, useEffect } from 'react';
-import { FolderOpen, ChevronDown, ChevronsLeft, AlertCircle, X, FileText, FolderPlus, FilePlus } from 'lucide-react';
+import { FolderOpen, ChevronDown, ChevronsLeft, AlertCircle, X, FileText, FolderPlus, FilePlus, ChevronRight } from 'lucide-react';
 import { useWorkspace } from '@/contexts/WorkspaceContext';
 import { FileSystemItem } from '@/types';
 import FolderTree from './FolderTree';
+import OutlineView from './OutlineView';
 import styles from './FileExplorer.module.css';
 
 interface FileExplorerProps {
@@ -53,9 +54,50 @@ async function readDirectory(
 }
 
 export default function FileExplorer({ onClose }: FileExplorerProps) {
-    const { rootItems, setRootItems, addWorkspaceItem, removeWorkspaceItem, openFile } = useWorkspace();
+    const { rootItems, setRootItems, addWorkspaceItem, removeWorkspaceItem, openFile, activeOutline } = useWorkspace();
     const [isLoading, setIsLoading] = useState(false);
     const [permissionStatus, setPermissionStatus] = useState<Record<string, 'granted' | 'prompt' | 'denied'>>({});
+
+    // Resizing state
+    const [outlineHeight, setOutlineHeight] = useState(40); // percentage
+    const [isResizing, setIsResizing] = useState(false);
+    const [isOutlineExpanded, setIsOutlineExpanded] = useState(true);
+    const sidebarRef = React.useRef<HTMLDivElement>(null);
+
+    const startResizing = useCallback(() => {
+        setIsResizing(true);
+        document.body.style.cursor = 'ns-resize';
+        document.body.style.userSelect = 'none';
+    }, []);
+
+    const stopResizing = useCallback(() => {
+        setIsResizing(false);
+        document.body.style.cursor = '';
+        document.body.style.userSelect = '';
+    }, []);
+
+    const resize = useCallback((e: MouseEvent) => {
+        if (!isResizing || !sidebarRef.current) return;
+
+        const sidebarRect = sidebarRef.current.getBoundingClientRect();
+        const relativeY = e.clientY - sidebarRect.top;
+        const percentage = 100 - (relativeY / sidebarRect.height) * 100;
+
+        // Clamp between 10% and 80%
+        const clamped = Math.min(Math.max(percentage, 10), 80);
+        setOutlineHeight(clamped);
+    }, [isResizing]);
+
+    useEffect(() => {
+        if (isResizing) {
+            window.addEventListener('mousemove', resize);
+            window.addEventListener('mouseup', stopResizing);
+        }
+        return () => {
+            window.removeEventListener('mousemove', resize);
+            window.removeEventListener('mouseup', stopResizing);
+        };
+    }, [isResizing, resize, stopResizing]);
 
     // Check permission status for all root items
     useEffect(() => {
@@ -190,7 +232,7 @@ export default function FileExplorer({ onClose }: FileExplorerProps) {
     }, [openFile]);
 
     return (
-        <div className={styles.explorer}>
+        <div className={styles.explorer} ref={sidebarRef}>
             <div className={styles.header}>
                 <span className={styles.title}>EXPLORER</span>
                 <div className={styles.actions}>
@@ -220,7 +262,13 @@ export default function FileExplorer({ onClose }: FileExplorerProps) {
                 </div>
             </div>
 
-            <div className={styles.treeContainer}>
+            <div
+                className={styles.treeContainer}
+                style={{
+                    flex: activeOutline.length > 0 && isOutlineExpanded ? `0 0 ${100 - outlineHeight}%` : '1',
+                    minHeight: activeOutline.length > 0 && isOutlineExpanded ? '20%' : undefined
+                }}
+            >
                 {rootItems.length > 0 ? (
                     rootItems.map((item) => (
                         <div key={item.path} className={styles.rootSection}>
@@ -273,6 +321,23 @@ export default function FileExplorer({ onClose }: FileExplorerProps) {
                     </div>
                 )}
             </div>
+
+            {activeOutline.length > 0 && (
+                <div
+                    style={{
+                        flex: isOutlineExpanded ? `0 0 ${outlineHeight}%` : '0 0 auto',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        overflow: 'hidden',
+                        minHeight: 0
+                    }}
+                >
+                    <OutlineView
+                        onResizeStart={startResizing}
+                        onExpandedChange={setIsOutlineExpanded}
+                    />
+                </div>
+            )}
         </div>
     );
 }

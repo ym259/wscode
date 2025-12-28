@@ -15,6 +15,7 @@ import { useCustomEditor, useEditorHandle } from './use-custom-editor';
 import { useDocxLoader } from './use-docx-loader';
 import { useTrackChanges } from './use-track-changes';
 import { useComments } from './use-comments';
+import { useOutline } from './use-outline';
 import { Ruler } from './Ruler';
 
 export type { CustomDocEditorHandle, TrackChangesDisplayMode };
@@ -60,6 +61,9 @@ export const CustomDocEditor = forwardRef<CustomDocEditorHandle, CustomDocEditor
         handleAddComment,
         handleCancelCommentInput
     } = useComments({ editor, setComments });
+
+    // 6. Handle Outline & Navigation
+    useOutline({ editor });
 
     // Image upload handler
     const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {

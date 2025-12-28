@@ -195,3 +195,21 @@
     opacity: 0.5;
     cursor: not-allowed;
 }
+
+.sectionHeader {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: var(--spacing-sm) var(--spacing-md);
+    border-top: 1px solid var(--border-color);
+    cursor: pointer;
+    font-size: var(--font-size-xs);
+    font-weight: 600;
+    letter-spacing: 0.5px;
+    color: var(--text-secondary);
+    background: var(--bg-sidebar);
+}
+
+.sectionHeader:hover {
+    color: var(--text-primary);
+}
