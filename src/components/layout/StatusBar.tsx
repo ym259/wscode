@@ -3,6 +3,7 @@
 import React from 'react';
 import { GitBranch, AlertCircle, CheckCircle } from 'lucide-react';
 import styles from './StatusBar.module.css';
+import { useWorkspace } from '@/contexts/WorkspaceContext';
 
 interface StatusBarProps {
     branch?: string;
@@ -15,6 +16,8 @@ export default function StatusBar({
     cursorPosition = { line: 1, column: 1 },
     documentStatus = 'saved'
 }: StatusBarProps) {
+    const { documentStats } = useWorkspace();
+
     return (
         <div className={styles.statusBar}>
             <div className={styles.leftSection}>
@@ -37,11 +40,16 @@ export default function StatusBar({
             </div>
 
             <div className={styles.rightSection}>
+                {documentStats && (
+                    <>
+                        <div className={styles.item}>
+                            {documentStats.charCount} Chars
+                        </div>
+                    </>
+                )}
                 <div className={styles.item}>
-                    Ln {cursorPosition.line}, Col {cursorPosition.column}
+                    {documentStats?.fileType || 'DOCX'}
                 </div>
-                <div className={styles.item}>UTF-8</div>
-                <div className={styles.item}>DOCX</div>
             </div>
         </div>
     );

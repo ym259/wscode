@@ -17,8 +17,9 @@ interface DocxEditorProps {
 }
 
 export default function DocxEditor({ file, fileName, handle }: DocxEditorProps) {
-    const { setAIActionHandler, rootItems, setAttachedSelection, openFile } = useWorkspace();
+    const { setAIActionHandler, rootItems, setAttachedSelection, openFile, setDocumentStats } = useWorkspace();
     const containerRef = useRef<HTMLDivElement>(null);
+    const lastStatsUpdateRef = useRef<number>(0);
 
     // Initialize formatting and editor core
     const { superdocRef, superdocInstance, isReady, error: docError, toolbarId } = useSuperDoc(containerRef, file, fileName);
@@ -87,6 +88,55 @@ export default function DocxEditor({ file, fileName, handle }: DocxEditorProps) 
         setAIActionHandler,
         openFileInEditor: openFileByPath
     });
+
+    // Monitor editor changes and update stats
+    useEffect(() => {
+        if (!isReady || !superdocInstance) return;
+
+        const updateStats = () => {
+            const superdoc = superdocInstance as any;
+            const editor = superdoc.editor;
+
+            if (!editor?.state?.doc) return;
+
+            // Throttle updates to once per second
+            const now = Date.now();
+            if (now - lastStatsUpdateRef.current < 1000) return;
+            lastStatsUpdateRef.current = now;
+
+            const doc = editor.state.doc;
+            const text = doc.textContent;
+
+            // Simple calculations
+            const charCount = text.length;
+            const wordCount = text.trim() === '' ? 0 : text.trim().split(/\s+/).length;
+            const lineCount = doc.childCount; // Approximate, counts blocks
+
+            // Page count estimation (if available) or fallback
+            // Note: Superdoc might expose layout info, otherwise we estimate or use 1
+            const pageCount = superdoc.pageCount || 1;
+
+            setDocumentStats({
+                wordCount,
+                charCount,
+                lineCount,
+                pageCount,
+                fileType: 'DOCX'
+            });
+        };
+
+        // Initial update
+        updateStats();
+
+        // Set up interval to check for changes since we can't easily hook into transaction dispatch
+        // without writing a plugin
+        const intervalId = setInterval(updateStats, 2000);
+
+        return () => {
+            clearInterval(intervalId);
+            setDocumentStats(null);
+        };
+    }, [isReady, superdocInstance, setDocumentStats]);
 
     // Handle Cmd+E to attach selection to chat
     const handleKeyDown = useCallback((e: KeyboardEvent) => {

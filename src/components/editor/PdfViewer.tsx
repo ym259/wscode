@@ -2,13 +2,29 @@
 
 import React, { useEffect, useState } from 'react';
 import styles from './PdfViewer.module.css';
+import { useWorkspace } from '@/contexts/WorkspaceContext';
 
 interface PdfViewerProps {
     file: File;
 }
 
 export default function PdfViewer({ file }: PdfViewerProps) {
+    const { setDocumentStats } = useWorkspace();
     const [url, setUrl] = useState<string | null>(null);
+
+    useEffect(() => {
+        setDocumentStats({
+            wordCount: 0,
+            charCount: 0,
+            lineCount: 0,
+            pageCount: 0,
+            fileType: 'PDF'
+        });
+
+        return () => {
+            setDocumentStats(null);
+        };
+    }, [setDocumentStats]);
 
     useEffect(() => {
         const objectUrl = URL.createObjectURL(file);

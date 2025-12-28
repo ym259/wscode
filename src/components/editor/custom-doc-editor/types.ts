@@ -14,6 +14,8 @@ export interface CustomDocEditorHandle {
     scrollToBlock: (blockIndex: number) => void;
     getDocAttrs: () => any;
     setPageLayout: (updates: PageLayoutUpdate) => void;
+    getPageCount: () => number;
+    getVisualLineCount: () => number;
 }
 
 export interface CustomDocEditorProps {

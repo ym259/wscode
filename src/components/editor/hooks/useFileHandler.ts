@@ -1,4 +1,5 @@
 import { useState, useCallback, useEffect, RefObject } from 'react';
+import { useWorkspace } from '@/contexts/WorkspaceContext';
 import { SuperDoc } from '@harbour-enterprises/superdoc';
 
 export function useFileHandler(
@@ -8,6 +9,7 @@ export function useFileHandler(
 ) {
     const [isSaving, setIsSaving] = useState(false);
     const [saveError, setSaveError] = useState<string | null>(null);
+    const { isOverwriteEnabled } = useWorkspace();
 
     const saveFile = useCallback(async () => {
         console.log('[useFileHandler] saveFile called', {
@@ -33,28 +35,41 @@ export function useFileHandler(
             }
             console.log('[useFileHandler] Export successful, blob size:', blob.size);
 
-            // Verify permission before writing
-            const options: FileSystemHandlePermissionDescriptor = { mode: 'readwrite' };
-            if ((await handle.queryPermission(options)) !== 'granted') {
-                if ((await handle.requestPermission(options)) !== 'granted') {
-                    throw new Error('Permission denied to save file');
+            if (isOverwriteEnabled && handle) {
+                // Verify permission before writing
+                const options: FileSystemHandlePermissionDescriptor = { mode: 'readwrite' };
+                if ((await handle.queryPermission(options)) !== 'granted') {
+                    if ((await handle.requestPermission(options)) !== 'granted') {
+                        throw new Error('Permission denied to save file');
+                    }
                 }
+
+                // Write blob to the local file system
+                console.log('[useFileHandler] Writing to file system...');
+                const writable = await handle.createWritable();
+                await writable.write(blob);
+                await writable.close();
+
+                console.log(`[useFileHandler] Saved ${fileName} successfully (overwritten)`);
+            } else {
+                // Trigger download as a new file
+                console.log('[useFileHandler] Triggering download as new file...');
+                const url = window.URL.createObjectURL(blob);
+                const link = document.body.appendChild(document.createElement('a'));
+                link.href = url;
+                link.download = fileName;
+                link.click();
+                link.remove();
+                window.URL.revokeObjectURL(url);
+                console.log(`[useFileHandler] Downloaded ${fileName} successfully`);
             }
-
-            // Write blob to the local file system
-            console.log('[useFileHandler] Writing to file system...');
-            const writable = await handle.createWritable();
-            await writable.write(blob);
-            await writable.close();
-
-            console.log(`[useFileHandler] Saved ${fileName} successfully`);
         } catch (err) {
             console.error('[useFileHandler] Error saving file:', err);
             setSaveError(`Error saving file: ${(err as Error).message}`);
         } finally {
             setIsSaving(false);
         }
-    }, [handle, isSaving, fileName, superdocRef]);
+    }, [handle, isSaving, fileName, superdocRef, isOverwriteEnabled]);
 
     useEffect(() => {
         console.log('[useFileHandler] Setting up keydown listener (capture phase)');

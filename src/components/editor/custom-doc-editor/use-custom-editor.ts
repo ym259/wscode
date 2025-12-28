@@ -70,7 +70,9 @@ export const useEditorHandle = (
     comments: Comment[],
     setComments: Dispatch<SetStateAction<Comment[]>>,
     setDocAttrs: Dispatch<SetStateAction<any>>,
-    originalZip: JSZip | null
+    originalZip: JSZip | null,
+    pageCount: number,
+    visualLineCount: number
 ) => {
     useImperativeHandle(ref, () => {
         if (editor) {
@@ -175,7 +177,9 @@ export const useEditorHandle = (
                     console.log('[CustomDocEditor] Page layout updated:', newAttrs);
                     return newAttrs;
                 });
-            }
+            },
+            getPageCount: () => pageCount,
+            getVisualLineCount: () => visualLineCount
         };
-    }, [editor, docAttrs, comments, setComments, setDocAttrs, originalZip]);
+    }, [editor, docAttrs, comments, setComments, setDocAttrs, originalZip, pageCount, visualLineCount]);
 };
