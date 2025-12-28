@@ -3,6 +3,7 @@
 import React, { useEffect, useState } from 'react';
 import { Editor } from '@tiptap/core';
 import { trackChangesHelpers } from '@harbour-enterprises/superdoc';
+import { useWorkspace } from '@/contexts/WorkspaceContext';
 
 interface TrackChangesToolbarProps {
     editor: Editor | null;
@@ -10,6 +11,7 @@ interface TrackChangesToolbarProps {
 
 export function TrackChangesToolbar({ editor }: TrackChangesToolbarProps) {
     const [changeCount, setChangeCount] = useState(0);
+    const { isOverwriteEnabled, setIsOverwriteEnabled } = useWorkspace();
 
     useEffect(() => {
         if (editor) {
@@ -133,6 +135,47 @@ export function TrackChangesToolbar({ editor }: TrackChangesToolbarProps) {
                     Reject All
                 </button>
             </div>
+
+            <div className="h-4 w-px bg-gray-300 mx-2" />
+
+            {/* Overwrite Toggle */}
+            <button
+                onClick={() => setIsOverwriteEnabled(!isOverwriteEnabled)}
+                style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    padding: '4px 8px',
+                    borderRadius: '4px',
+                    border: '1px solid',
+                    borderColor: isOverwriteEnabled ? '#2b579a' : '#e5e7eb',
+                    backgroundColor: isOverwriteEnabled ? '#f0f7ff' : '#ffffff',
+                    color: isOverwriteEnabled ? '#2b579a' : '#4b5563',
+                    fontSize: '12px',
+                    fontWeight: 500,
+                    cursor: 'pointer',
+                    transition: 'all 0.1s',
+                }}
+            >
+                <div style={{
+                    width: '12px',
+                    height: '12px',
+                    borderRadius: '2px',
+                    border: '1px solid',
+                    borderColor: isOverwriteEnabled ? '#2b579a' : '#d1d5db',
+                    backgroundColor: isOverwriteEnabled ? '#2b579a' : 'transparent',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                }}>
+                    {isOverwriteEnabled && (
+                        <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round">
+                            <polyline points="20 6 9 17 4 12" />
+                        </svg>
+                    )}
+                </div>
+                上書き保存
+            </button>
         </div>
     );
 }

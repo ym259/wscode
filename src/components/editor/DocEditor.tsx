@@ -1,6 +1,7 @@
 'use client';
 
 import React from 'react';
+import { useWorkspace } from '@/contexts/WorkspaceContext';
 import DocxEditor from './DocxEditor';
 import PdfViewer from './PdfViewer';
 import XlsxEditor from './XlsxEditor';
@@ -14,9 +15,15 @@ interface DocEditorProps {
 }
 
 export default function DocEditor({ file, fileName, handle }: DocEditorProps) {
+    const { setDocumentStats } = useWorkspace();
     const isDocx = fileName.toLowerCase().endsWith('.docx');
     const isPdf = fileName.toLowerCase().endsWith('.pdf');
     const isXlsx = fileName.toLowerCase().endsWith('.xlsx');
+
+    // Reset stats when switching documents
+    React.useEffect(() => {
+        setDocumentStats(null);
+    }, [fileName, setDocumentStats]);
 
     if (isDocx) {
         if (process.env.NEXT_PUBLIC_USE_CUSTOM_EDITOR === 'true') {

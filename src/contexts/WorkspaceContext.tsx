@@ -5,6 +5,14 @@ import { FileSystemItem, EditorTab, ChatMessage, WorkspaceState, AttachedSelecti
 import { AgentEvent } from '@/types';
 import { saveToDB, getFromDB, STORAGE_KEYS } from '@/lib/indexeddb';
 
+export interface DocumentStats {
+    wordCount: number;
+    charCount: number;
+    lineCount: number;
+    pageCount: number;
+    fileType: string;
+}
+
 // Type for the AI action handler function
 export type AIActionHandler = (
     prompt: string,
@@ -44,6 +52,12 @@ interface WorkspaceContextType extends WorkspaceState {
     setActiveOutline: (outline: OutlineItem[]) => void;
     navRequest: string | null;
     setNavRequest: (id: string | null) => void;
+    // Overwrite Save toggle
+    isOverwriteEnabled: boolean;
+    setIsOverwriteEnabled: (enabled: boolean) => void;
+    // Document Stats
+    documentStats: DocumentStats | null;
+    setDocumentStats: (stats: DocumentStats | null) => void;
 }
 
 export interface OutlineItem {
@@ -65,6 +79,8 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     const [attachedSelection, setAttachedSelectionState] = useState<AttachedSelection | null>(null);
     const [activeOutline, setActiveOutline] = useState<OutlineItem[]>([]);
     const [navRequest, setNavRequest] = useState<string | null>(null);
+    const [isOverwriteEnabled, setIsOverwriteEnabled] = useState(false);
+    const [documentStats, setDocumentStats] = useState<DocumentStats | null>(null);
 
     // Load workspace state from IDB on mount
     useEffect(() => {
@@ -94,6 +110,12 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
             const storedActiveTabId = await getFromDB<string>(STORAGE_KEYS.ACTIVE_TAB_ID);
             if (storedActiveTabId) {
                 setActiveTabId(storedActiveTabId);
+            }
+
+            // Restore Settings
+            const storedOverwriteEnabled = await getFromDB<boolean>(STORAGE_KEYS.SETTINGS_OVERWRITE_ENABLED);
+            if (typeof storedOverwriteEnabled === 'boolean') {
+                setIsOverwriteEnabled(storedOverwriteEnabled);
             }
         };
         restoreWorkspace();
@@ -279,6 +301,13 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
                 setActiveOutline,
                 navRequest,
                 setNavRequest,
+                isOverwriteEnabled,
+                setIsOverwriteEnabled: (enabled: boolean) => {
+                    setIsOverwriteEnabled(enabled);
+                    saveToDB(STORAGE_KEYS.SETTINGS_OVERWRITE_ENABLED, enabled);
+                },
+                documentStats,
+                setDocumentStats,
             }}
         >
             {children}
@@ -293,4 +322,3 @@ export function useWorkspace() {
     }
     return context;
 }
-

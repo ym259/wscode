@@ -2,7 +2,7 @@
 
 /* eslint-disable @next/next/no-img-element */
 import React, { useState, useRef, useCallback, useEffect } from 'react';
-import { X, Sparkles, User, Bot, Mic, MicOff, AlertCircle } from 'lucide-react';
+import { X, User, Bot, Mic, MicOff, AlertCircle } from 'lucide-react';
 import { useWorkspace } from '@/contexts/WorkspaceContext';
 import { ToolCall, MessageItem, AgentEvent, ChatMessage } from '@/types';
 import { ToolCallItem } from './ToolCallItem';
@@ -11,6 +11,7 @@ import { MentionInput } from './MentionInput';
 import { renderMessageContent } from './renderMessageContent';
 import { useVoiceAgent } from './useVoiceAgent';
 import { SearchResultsNavigation } from './SearchResultsNavigation';
+import { WSCodeLogo } from '@/components/common/WSCodeLogo';
 import styles from './AgentPanel.module.css';
 
 interface AgentPanelProps {
@@ -399,9 +400,9 @@ export default function AgentPanel({ isOpen, onClose }: AgentPanelProps) {
         <div className={styles.panel}>
             <div className={styles.header}>
                 <div className={styles.headerTitle}>
-                    <Sparkles size={16} className={styles.sparkle} />
+                    {/* <Sparkles size={16} className={styles.sparkle} /> */}
                     <span>AI Assistant</span>
-                    <button
+                    {/* <button
                         className={getVoiceButtonClass()}
                         onClick={toggleVoice}
                         title={getVoiceButtonTitle()}
@@ -414,7 +415,7 @@ export default function AgentPanel({ isOpen, onClose }: AgentPanelProps) {
                             <span className={styles.voiceStatusDot} />
                             <span>{voiceListening ? 'Listening' : voiceSpeaking ? 'Speaking' : 'Ready'}</span>
                         </div>
-                    )}
+                    )} */}
                 </div>
                 <button className={styles.closeButton} onClick={onClose} title="Close Panel">
                     <X size={16} />
@@ -434,7 +435,10 @@ export default function AgentPanel({ isOpen, onClose }: AgentPanelProps) {
             <div className={styles.messages}>
                 {agentMessages.length === 0 ? (
                     <div className={styles.emptyState}>
-                        <Sparkles size={32} className={styles.emptyIcon} />
+                        <WSCodeLogo
+                            size={48}
+                            className={styles.emptyIcon}
+                        />
                         <h3>How can I help you?</h3>
                         <p>Ask me to help draft, edit, or review your documents.</p>
                         <div className={styles.suggestions}>

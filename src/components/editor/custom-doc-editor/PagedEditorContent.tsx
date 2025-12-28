@@ -9,6 +9,7 @@ interface PagedEditorContentProps {
     docAttrs: any;
     trackChangesDisplayMode: 'markup' | 'final';
     isPaged?: boolean;
+    onLayoutStatsChange?: (stats: { pageCount: number; visualLineCount: number }) => void;
 }
 
 // Convert twips to pixels at 96 DPI
@@ -37,7 +38,8 @@ function collectBlockElements(container: HTMLElement): HTMLElement[] {
 
         if (tagName === 'ol' || tagName === 'ul' || tagName === 'div' ||
             tagName === 'section' || tagName === 'article' || tagName === 'table' ||
-            tagName === 'tbody' || tagName === 'thead' || tagName === 'tr') {
+            tagName === 'tbody' || tagName === 'thead' || tagName === 'tr' ||
+            tagName === 'td' || tagName === 'th' || tagName === 'blockquote') {
             Array.from(element.children).forEach(child => {
                 if (child instanceof HTMLElement) {
                     walk(child);
@@ -60,6 +62,7 @@ export const PagedEditorContent: React.FC<PagedEditorContentProps> = ({
     docAttrs,
     trackChangesDisplayMode,
     isPaged = true,
+    onLayoutStatsChange,
 }) => {
     const [pages, setPages] = useState<PageInfo[]>([{ pageNumber: 1, contentOffset: 0, visibleHeight: 0 }]);
     const editorContainerRef = useRef<HTMLDivElement>(null);
@@ -145,13 +148,25 @@ export const PagedEditorContent: React.FC<PagedEditorContentProps> = ({
         }
 
         const proseMirror = editorContainerRef.current.querySelector('.ProseMirror') as HTMLElement;
-        if (!proseMirror) return;
+        if (!proseMirror) {
+            console.warn('[PagedEditorContent] .ProseMirror element not found');
+            return;
+        }
+
+        // Wait for content to actually render (has height)
+        if (proseMirror.clientHeight < 10) {
+            console.warn('[PagedEditorContent] ProseMirror has no height yet, retrying...');
+            setTimeout(calculatePages, 200);
+            return;
+        }
 
         const blocks = collectBlockElements(proseMirror);
+        console.log(`[PagedEditorContent] Found ${blocks.length} blocks in proseMirror`);
 
         if (blocks.length === 0) {
-            setPages([{ pageNumber: 1, contentOffset: 0, visibleHeight: contentAreaHeight }]);
-            setClonedContent(proseMirror.innerHTML);
+            console.warn('[PagedEditorContent] No blocks found, defaulting to 1 page, retrying...');
+            // Likely not rendered yet, retry soon
+            setTimeout(calculatePages, 200);
             return;
         }
 
@@ -160,12 +175,17 @@ export const PagedEditorContent: React.FC<PagedEditorContentProps> = ({
         let currentPageStart = 0;
         let pageNumber = 1;
 
+        // Track total visual lines
+        let totalVisualLines = 0;
+
         // Find the last LINE that completely fits on each page
         for (let i = 0; i < blocks.length; i++) {
             const block = blocks[i];
             const lines = getLineRectsInBlock(block, containerRect.top);
 
             for (const line of lines) {
+                totalVisualLines++;
+
                 // If this line's bottom exceeds the current page's available space
                 if (line.bottom > currentPageStart + contentAreaHeight) {
                     // Start a new page from this line's top
@@ -199,7 +219,13 @@ export const PagedEditorContent: React.FC<PagedEditorContentProps> = ({
 
         setPages(pageList);
         setClonedContent(proseMirror.innerHTML);
-    }, [contentAreaHeight, isPaged]);
+        if (onLayoutStatsChange) {
+            onLayoutStatsChange({
+                pageCount: pageList.length,
+                visualLineCount: totalVisualLines
+            });
+        }
+    }, [contentAreaHeight, isPaged, onLayoutStatsChange]);
 
     React.useLayoutEffect(() => {
         if (!isPaged) return;

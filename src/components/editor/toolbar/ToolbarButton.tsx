@@ -23,11 +23,13 @@ export const ToolbarButton: React.FC<ToolbarButtonProps> = ({
         onClick={onClick}
         title={label}
         style={{
-            padding: '8px',
+            padding: '4px',
+            width: '28px',
+            height: '28px',
             borderRadius: '4px',
-            transition: 'background-color 0.15s ease',
+            transition: 'background-color 0.1s ease',
             backgroundColor: isActive ? '#e5e7eb' : 'transparent',
-            color: isActive ? '#2563eb' : '#4b5563',
+            color: isActive ? '#0f172a' : '#4b5563',
             border: 'none',
             cursor: 'pointer',
             display: 'flex',
@@ -41,6 +43,6 @@ export const ToolbarButton: React.FC<ToolbarButtonProps> = ({
             if (!isActive) e.currentTarget.style.backgroundColor = 'transparent';
         }}
     >
-        <Icon size={18} />
+        <Icon size={16} />
     </button>
 );

@@ -28,7 +28,7 @@ const measureTextWidth = (text: string, font: string = '11pt "Arial"'): number =
 };
 
 export default function XlsxEditor({ file, fileName, handle }: XlsxEditorProps) {
-    const { setAIActionHandler, rootItems, openFile } = useWorkspace();
+    const { setAIActionHandler, rootItems, openFile, setDocumentStats } = useWorkspace();
 
     // Parse xlsx and manage sheet state
     const { sheets, isReady, error: parseError, workbookRef } = useFortuneSheet(file);
@@ -170,12 +170,28 @@ export default function XlsxEditor({ file, fileName, handle }: XlsxEditorProps) 
     // Track latest sheet data for saving
     const latestSheetsRef = React.useRef(sheets);
 
-    // Update ref when sheets load initially
+    // Update stats when sheets load initially or change
     React.useEffect(() => {
         if (sheets.length > 0) {
             latestSheetsRef.current = sheets;
+
+            // Calculate basic stats for Excel
+            const sheetCount = sheets.length;
+            const totalCells = sheets.reduce((count, sheet: any) => count + (sheet.celldata?.length || 0), 0);
+
+            setDocumentStats({
+                wordCount: 0,
+                charCount: 0,
+                lineCount: totalCells, // Using cell count as line count placeholder or just showing 0
+                pageCount: sheetCount, // Using sheet count as page count placeholder
+                fileType: 'XLSX'
+            });
         }
-    }, [sheets]);
+
+        return () => {
+            setDocumentStats(null);
+        };
+    }, [sheets, setDocumentStats]);
 
     // Handle file saving
     const { saveError, onSave } = useXlsxFileHandler(workbookRef, handle, fileName);

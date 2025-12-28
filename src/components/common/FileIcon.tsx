@@ -11,13 +11,34 @@ export default function FileIcon({ fileName, size = 16, className = '' }: FileIc
     const ext = fileName.toLowerCase();
 
     if (ext.endsWith('.xlsx') || ext.endsWith('.xls')) {
-        return <FileSpreadsheet size={size} className={className} style={{ color: '#1D6F42' }} />;
+        return (
+            <img
+                src="/icons/xlsx_icon.png"
+                alt="xlsx"
+                style={{ width: size, height: size, objectFit: 'contain' }}
+                className={className}
+            />
+        );
     }
     if (ext.endsWith('.pdf')) {
-        return <FileType size={size} className={className} style={{ color: '#E53935' }} />;
+        return (
+            <img
+                src="/icons/Icon_pdf_file.png"
+                alt="pdf"
+                style={{ width: size, height: size, objectFit: 'contain' }}
+                className={className}
+            />
+        );
     }
     if (ext.endsWith('.docx') || ext.endsWith('.doc')) {
-        return <FileText size={size} className={className} style={{ color: '#2B579A' }} />;
+        return (
+            <img
+                src="/icons/docx_icon.png"
+                alt="docx"
+                style={{ width: size, height: size, objectFit: 'contain' }}
+                className={className}
+            />
+        );
     }
     if (ext.endsWith('.md')) {
         return <FileText size={size} className={className} style={{ color: '#42A5F5' }} />;

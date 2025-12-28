@@ -28,6 +28,8 @@ export const CustomDocEditor = forwardRef<CustomDocEditorHandle, CustomDocEditor
     const [trackChangesDisplayMode, setTrackChangesDisplayMode] = useState<TrackChangesDisplayMode>('markup');
     const [selectionUpdateKey, setSelectionUpdateKey] = useState(0);
     const [originalZip, setOriginalZip] = useState<JSZip | null>(null);
+    const [pageCount, setPageCount] = useState(1);
+    const [visualLineCount, setVisualLineCount] = useState(0);
 
     const [showComments, setShowComments] = useState(true);
 
@@ -37,7 +39,7 @@ export const CustomDocEditor = forwardRef<CustomDocEditorHandle, CustomDocEditor
     });
 
     // 2. Expose Handle
-    useEditorHandle(ref, editor, docAttrs, comments, setComments, setDocAttrs, originalZip);
+    useEditorHandle(ref, editor, docAttrs, comments, setComments, setDocAttrs, originalZip, pageCount, visualLineCount);
 
     // 3. Load DOCX
     const { isLoading } = useDocxLoader({
@@ -165,6 +167,10 @@ export const CustomDocEditor = forwardRef<CustomDocEditorHandle, CustomDocEditor
                                     docAttrs={docAttrs}
                                     trackChangesDisplayMode={trackChangesDisplayMode}
                                     isPaged={process.env.NEXT_PUBLIC_DISABLE_PAGED_VIEW !== 'true'}
+                                    onLayoutStatsChange={({ pageCount, visualLineCount }) => {
+                                        setPageCount(pageCount);
+                                        setVisualLineCount(visualLineCount);
+                                    }}
                                 />
                             </div>
                         )}
