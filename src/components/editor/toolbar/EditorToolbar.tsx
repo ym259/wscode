@@ -247,6 +247,7 @@ export const EditorToolbar: React.FC<EditorToolbarProps> = ({
                             cursor: 'pointer',
                             backgroundColor: '#fff',
                             minWidth: '90px',
+                            color: '#333',
                         }}
                         title="Font Family"
                     >
@@ -272,6 +273,7 @@ export const EditorToolbar: React.FC<EditorToolbarProps> = ({
                             cursor: 'pointer',
                             backgroundColor: '#fff',
                             minWidth: '50px',
+                            color: '#333',
                         }}
                         title="Font Size"
                     >
@@ -510,6 +512,7 @@ export const EditorToolbar: React.FC<EditorToolbarProps> = ({
                                 cursor: 'pointer',
                                 backgroundColor: '#fff',
                                 minWidth: '120px',
+                                color: '#333',
                             }}
                             title="Track Changes Display Mode"
                         >

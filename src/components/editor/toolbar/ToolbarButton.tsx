@@ -27,7 +27,7 @@ export const ToolbarButton: React.FC<ToolbarButtonProps> = ({
             borderRadius: '4px',
             transition: 'background-color 0.15s ease',
             backgroundColor: isActive ? '#e5e7eb' : 'transparent',
-            color: isActive ? '#2563eb' : '#4b5563',
+            color: isActive ? '#2563eb' : '#4b5563 !important',
             border: 'none',
             cursor: 'pointer',
             display: 'flex',
