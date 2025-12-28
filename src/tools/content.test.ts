@@ -79,10 +79,12 @@ const createMockEditor = (content: string[]) => {
     };
 
     return {
-        state: { doc, selection: { from: 0, to: 0 } }, // exposure initial selection
+        state: { doc, selection: { from: 0, to: 0 }, schema: { marks: { code: true } } },
+        view: { dispatch: vi.fn() },
         chain: () => chainMock,
-        schema: { marks: { code: true } }
-    };
+        schema: { marks: { code: true } },
+        helpers: { blockNode: { getBlockNodes: () => [] } }
+    } as any;
 };
 
 describe('editText tool', () => {

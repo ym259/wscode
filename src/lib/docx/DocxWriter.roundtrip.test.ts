@@ -20,7 +20,7 @@ describe('DocxWriter Round-Trip', () => {
 
     beforeAll(async () => {
         // Load the sample file
-        const samplePath = join(process.cwd(), 'public', 'ソフトウェア開発及び保守運用業務委託契約書（案）0807.docx');
+        const samplePath = join(process.cwd(), 'public', 'sample-docs', 'ソフトウェア開発及び保守運用業務委託契約書（案）0807.docx');
         const sampleBuffer = readFileSync(samplePath);
 
         // Parse original

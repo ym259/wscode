@@ -29,6 +29,8 @@ export const CustomDocEditor = forwardRef<CustomDocEditorHandle, CustomDocEditor
     const [selectionUpdateKey, setSelectionUpdateKey] = useState(0);
     const [originalZip, setOriginalZip] = useState<JSZip | null>(null);
 
+    const [showComments, setShowComments] = useState(true);
+
     // 1. Initialize Editor
     const editor = useCustomEditor({
         setSelectionUpdateKey
@@ -129,6 +131,8 @@ export const CustomDocEditor = forwardRef<CustomDocEditorHandle, CustomDocEditor
                 onTrackChangesDisplayModeChange={setTrackChangesDisplayMode}
                 docAttrs={docAttrs}
                 onPageLayoutChange={handlePageLayoutChange}
+                showComments={showComments}
+                onToggleComments={() => setShowComments(!showComments)}
             />
 
             <div style={{
@@ -167,7 +171,14 @@ export const CustomDocEditor = forwardRef<CustomDocEditorHandle, CustomDocEditor
                     </div>
                 </div>
 
-                <CommentsSidebar comments={comments} editor={editor} onDeleteComment={handleDeleteComment} />
+                {showComments && comments.length > 0 && (
+                    <CommentsSidebar
+                        comments={comments}
+                        editor={editor}
+                        onDeleteComment={handleDeleteComment}
+                        onCollapse={() => setShowComments(false)}
+                    />
+                )}
             </div>
 
             <TrackChangePopup
