@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any, react-hooks/immutability */
 import { useImperativeHandle, Dispatch, SetStateAction } from 'react';
+import JSZip from 'jszip';
 import { useEditor, Editor } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import { Underline as UnderlineExtension } from '@tiptap/extension-underline';
@@ -75,7 +76,8 @@ export const useEditorHandle = (
     docAttrs: any,
     comments: Comment[],
     setComments: Dispatch<SetStateAction<Comment[]>>,
-    setDocAttrs: Dispatch<SetStateAction<any>>
+    setDocAttrs: Dispatch<SetStateAction<any>>,
+    originalZip: JSZip | null
 ) => {
     useImperativeHandle(ref, () => {
         if (editor) {
@@ -116,7 +118,7 @@ export const useEditorHandle = (
             export: async () => {
                 if (!editor) return null;
                 try {
-                    const writer = new DocxWriter();
+                    const writer = new DocxWriter(originalZip || undefined);
                     const content = editor.getJSON();
                     if (docAttrs) {
                         content.attrs = docAttrs;
@@ -182,5 +184,5 @@ export const useEditorHandle = (
                 });
             }
         };
-    }, [editor, docAttrs, comments, setComments, setDocAttrs]);
+    }, [editor, docAttrs, comments, setComments, setDocAttrs, originalZip]);
 };

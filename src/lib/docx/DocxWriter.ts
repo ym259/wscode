@@ -65,33 +65,40 @@ export class DocxWriter {
         const documentXml = this.serializeDocument(content.content || [], content.attrs);
 
         // Add required files
-        zip.file('[Content_Types].xml', this.getContentTypesXml());
-        zip.file('_rels/.rels', this.getRelsXml());
-        zip.file('word/document.xml', documentXml);
-        zip.file('word/_rels/document.xml.rels', this.getDocumentRelsXml());
+        // Add required files
+        if (!this.originalZip) {
+            zip.file('[Content_Types].xml', this.getContentTypesXml());
+            zip.file('_rels/.rels', this.getRelsXml());
+            zip.file('word/_rels/document.xml.rels', this.getDocumentRelsXml());
+            zip.file('word/styles.xml', this.getStylesXml(content.attrs));
+        } else {
+            // Check if styles.xml exists, if not write it (rare but possible in simple XML docs)
+            if (!zip.file('word/styles.xml')) {
+                zip.file('word/styles.xml', this.getStylesXml(content.attrs));
+            }
+            // For now, we trust existing document.xml.rels to contain necessary relationships
+            // TODO: If we start adding images/hyperlinks, we MUST parse and merge .rels
+        }
 
-        // Add styles.xml for heading definitions
-        zip.file('word/styles.xml', this.getStylesXml(content.attrs));
+        zip.file('word/document.xml', documentXml);
 
         // Add numbering.xml for list formatting
         // If we have the original ZIP, try to preserve the original numbering.xml for better fidelity
         let useOriginalNumbering = false;
         if (this.originalZip) {
-            if (this.originalZip) {
-                const originalNumberingXml = await this.originalZip.file('word/numbering.xml')?.async('string');
-                if (originalNumberingXml) {
-                    // Append any NEW generated numbering definitions to the original file
-                    // This handles lists that were forked (e.g. for numbering restart) which need new definitions
-                    const closingTag = '</w:numbering>';
-                    if (originalNumberingXml.includes(closingTag)) {
-                        const newDefinitions = this.getNumberingXml(true);
-                        const mergedXml = originalNumberingXml.replace(closingTag, '') + newDefinitions + closingTag;
-                        zip.file('word/numbering.xml', mergedXml);
-                    } else {
-                        zip.file('word/numbering.xml', originalNumberingXml);
-                    }
-                    useOriginalNumbering = true;
+            const originalNumberingXml = await this.originalZip.file('word/numbering.xml')?.async('string');
+            if (originalNumberingXml) {
+                // Append any NEW generated numbering definitions to the original file
+                // This handles lists that were forked (e.g. for numbering restart) which need new definitions
+                const closingTag = '</w:numbering>';
+                if (originalNumberingXml.includes(closingTag)) {
+                    const newDefinitions = this.getNumberingXml(true);
+                    const mergedXml = originalNumberingXml.replace(closingTag, '') + newDefinitions + closingTag;
+                    zip.file('word/numbering.xml', mergedXml);
+                } else {
+                    zip.file('word/numbering.xml', originalNumberingXml);
                 }
+                useOriginalNumbering = true;
             }
         }
         if (!useOriginalNumbering) {
@@ -203,6 +210,10 @@ export class DocxWriter {
                 const linePitch = docAttrs.docGrid['w:linePitch'] || '360';
                 const type = docAttrs.docGrid['w:type'] || 'lines';
                 sectPr += `<w:docGrid w:linePitch="${linePitch}" w:type="${type}"/>`;
+            } else {
+                // Formatting fallback: If we have page size but missed docGrid, default to standard CJK grid
+                // to prevent Word from defaulting to a behavior that breaks line spacing.
+                sectPr += `<w:docGrid w:linePitch="360" w:type="lines"/>`;
             }
 
             sectPr += '</w:sectPr>';

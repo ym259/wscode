@@ -2,6 +2,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 import React, { useState, forwardRef } from 'react';
+import JSZip from 'jszip';
 
 import { EditorToolbar } from '../toolbar/EditorToolbar';
 import { CommentsSidebar } from '../sidebar/CommentsSidebar';
@@ -26,6 +27,7 @@ export const CustomDocEditor = forwardRef<CustomDocEditorHandle, CustomDocEditor
     const [docAttrs, setDocAttrs] = useState<any>(null);
     const [trackChangesDisplayMode, setTrackChangesDisplayMode] = useState<TrackChangesDisplayMode>('markup');
     const [selectionUpdateKey, setSelectionUpdateKey] = useState(0);
+    const [originalZip, setOriginalZip] = useState<JSZip | null>(null);
 
     // 1. Initialize Editor
     const editor = useCustomEditor({
@@ -33,14 +35,15 @@ export const CustomDocEditor = forwardRef<CustomDocEditorHandle, CustomDocEditor
     });
 
     // 2. Expose Handle
-    useEditorHandle(ref, editor, docAttrs, comments, setComments, setDocAttrs);
+    useEditorHandle(ref, editor, docAttrs, comments, setComments, setDocAttrs, originalZip);
 
     // 3. Load DOCX
     const { isLoading } = useDocxLoader({
         file,
         editor,
         setDocAttrs,
-        setComments
+        setComments,
+        setOriginalZip
     });
 
     // 4. Handle Track Changes

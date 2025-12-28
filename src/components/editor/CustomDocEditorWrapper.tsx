@@ -4,6 +4,7 @@ import React, { useRef, useState, useEffect } from 'react';
 import dynamic from 'next/dynamic';
 import { useWorkspace } from '@/contexts/WorkspaceContext';
 import { useUniversalAgent } from './hooks/useUniversalAgent';
+import { useCustomFileHandler } from './hooks/useCustomFileHandler';
 import { CustomDocEditorHandle } from './CustomDocEditor';
 import styles from './DocEditor.module.css';
 
@@ -45,6 +46,9 @@ export default function CustomDocEditorWrapper({ file, fileName, handle }: Custo
         // TODO: Implement openFileInEditor for CustomDocEditor if needed, 
         // similar to DocxEditor's openFileByPath if looking to support cross-file nav
     });
+
+    // Handle file operations (saving)
+    useCustomFileHandler(editorRef, handle, fileName);
 
     // Check if editor is ready
     useEffect(() => {

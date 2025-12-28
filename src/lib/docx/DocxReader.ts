@@ -20,7 +20,10 @@ export class DocxReader {
 
     async load(buffer: ArrayBuffer | Uint8Array) {
         const zip = await JSZip.loadAsync(buffer);
+        return this.loadFromZip(zip);
+    }
 
+    async loadFromZip(zip: JSZip) {
         // Load Styles
         const stylesXml = await zip.file('word/styles.xml')?.async('string');
         if (stylesXml) {
