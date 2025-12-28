@@ -2,7 +2,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import * as XLSX from 'xlsx';
+import * as XLSX from 'xlsx-js-style';
 
 interface UseXlsxFileHandlerResult {
     saveError: string | null;
@@ -42,7 +42,7 @@ export function useXlsxFileHandler(
 
         try {
             // Convert FortuneSheet data to SheetJS workbook
-            const XLSX = await import('xlsx');
+            const XLSX = await import('xlsx-js-style');
             const newWorkbook = XLSX.utils.book_new();
 
             sheets.forEach(sheet => {

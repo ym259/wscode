@@ -287,7 +287,7 @@ export const getNavigationTools = (context: ToolContext): ToolDefinition[] => {
                     } else if (fileName.endsWith('.xlsx') || fileName.endsWith('.xls')) {
                         // Use SheetJS to parse spreadsheet
                         try {
-                            const XLSX = await import('xlsx');
+                            const XLSX = await import('xlsx-js-style');
                             const arrayBuffer = await file.arrayBuffer();
                             const workbook = XLSX.read(arrayBuffer, { type: 'array' });
 
