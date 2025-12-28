@@ -7,7 +7,7 @@ import {
     Bold, Italic, Underline, Undo2, Redo2,
     AlignLeft, AlignCenter, AlignRight, AlignJustify,
     List, ListOrdered, Grid3x3, Image as ImageIcon, Ruler, FileText,
-    IndentIncrease, IndentDecrease, TextQuote
+    IndentIncrease, IndentDecrease, TextQuote, MessageSquare
 } from 'lucide-react';
 import { ToolbarButton } from './ToolbarButton';
 import { ColorPicker } from './ColorPicker';
@@ -27,6 +27,8 @@ interface EditorToolbarProps {
         pageSize?: { width: number; height: number };
         pageMargins?: { top: number; right: number; bottom: number; left: number };
     }) => void;
+    showComments?: boolean;
+    onToggleComments?: () => void;
 }
 
 /**
@@ -41,6 +43,8 @@ export const EditorToolbar: React.FC<EditorToolbarProps> = ({
     onTrackChangesDisplayModeChange,
     docAttrs,
     onPageLayoutChange,
+    showComments,
+    onToggleComments,
 }) => {
     const [showTextColorPicker, setShowTextColorPicker] = useState(false);
     const [showHighlightColorPicker, setShowHighlightColorPicker] = useState(false);
@@ -493,6 +497,12 @@ export const EditorToolbar: React.FC<EditorToolbarProps> = ({
                         onClick={() => setShowPageLayoutDialog(true)}
                         icon={FileText}
                         label="ページ設定"
+                    />
+                    <ToolbarButton
+                        isActive={showComments ?? true}
+                        onClick={onToggleComments ?? (() => { })}
+                        icon={MessageSquare}
+                        label={showComments ? "コメントを隠す" : "コメントを表示"}
                     />
 
                     <div style={{ width: '1px', height: '24px', backgroundColor: '#e5e7eb', margin: '0 8px' }} />

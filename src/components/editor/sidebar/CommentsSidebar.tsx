@@ -19,6 +19,7 @@ interface CommentsSidebarProps {
     comments: Comment[];
     editor: Editor | null;
     onDeleteComment?: (commentId: string) => void;
+    onCollapse?: () => void;
 }
 
 /**
@@ -26,7 +27,7 @@ interface CommentsSidebarProps {
  * Comments are positioned to match the vertical position of the highlighted text
  * When multiple comments overlap or are close together, they stack with spacing
  */
-export const CommentsSidebar: React.FC<CommentsSidebarProps> = ({ comments, editor, onDeleteComment }) => {
+export const CommentsSidebar: React.FC<CommentsSidebarProps> = ({ comments, editor, onDeleteComment, onCollapse }) => {
     const [commentPositions, setCommentPositions] = useState<CommentPosition[]>([]);
     const sidebarRef = useRef<HTMLDivElement>(null);
     const containerRef = useRef<HTMLDivElement>(null);
@@ -138,8 +139,35 @@ export const CommentsSidebar: React.FC<CommentsSidebarProps> = ({ comments, edit
                 position: 'sticky',
                 top: 0,
                 zIndex: 10,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
             }}>
-                Comments ({comments.length})
+                <span>Comments ({comments.length})</span>
+                {onCollapse && (
+                    <button
+                        onClick={onCollapse}
+                        style={{
+                            padding: '2px 6px',
+                            border: 'none',
+                            backgroundColor: 'transparent',
+                            color: '#605e5c',
+                            cursor: 'pointer',
+                            fontSize: '11px',
+                            fontWeight: 400,
+                            borderRadius: '4px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '4px',
+                            transition: 'background-color 0.15s',
+                        }}
+                        onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#f3f2f1'}
+                        onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+                        title="Collapse sidebar"
+                    >
+                        表示しない
+                    </button>
+                )}
             </div>
             <div
                 ref={containerRef}

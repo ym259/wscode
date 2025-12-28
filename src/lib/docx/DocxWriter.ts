@@ -1,18 +1,53 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 import JSZip from 'jszip';
+import { XMLBuilder, XMLParser } from 'fast-xml-parser';
 
 /**
  * Tiptap JSON content type
  */
 interface JSONContent {
     type: string;
-    attrs?: Record<string, any>;
+    attrs?: Record<string, unknown>;
     content?: JSONContent[];
     text?: string;
     marks?: Array<{
         type: string;
-        attrs?: Record<string, any>;
+        attrs?: Record<string, unknown>;
     }>;
+}
+
+interface DocAttrs {
+    sectPrElements?: unknown[];
+    pageSize?: Record<string, string>;
+    pageMargins?: Record<string, string>;
+    docGrid?: Record<string, string>;
+    cols?: Record<string, string>;
+    styleId?: string;
+    docDefaults?: Record<string, unknown>; // Complex nested structure from XML parser
+    keepNext?: string | number;
+    keepLines?: string | number;
+    snapToGrid?: string;
+    contextualSpacing?: string;
+    lineHeight?: string;
+    lineRule?: string;
+    spacingBefore?: string;
+    spacingAfter?: string;
+    textAlign?: string;
+    indent?: string;
+    hanging?: string;
+    firstLine?: string;
+    pPrFontSize?: string;
+    pPrFontFamily?: string;
+    originalNumId?: string;
+    start?: number;
+    level?: number;
+    backgroundColor?: string;
+    color?: string;
+    fontSize?: string;
+    fontFamily?: string;
+    author?: string;
+    date?: string;
+    commentId?: string;
+    content?: string;
 }
 
 /**
@@ -65,33 +100,38 @@ export class DocxWriter {
         const documentXml = this.serializeDocument(content.content || [], content.attrs);
 
         // Add required files
-        zip.file('[Content_Types].xml', this.getContentTypesXml());
-        zip.file('_rels/.rels', this.getRelsXml());
-        zip.file('word/document.xml', documentXml);
-        zip.file('word/_rels/document.xml.rels', this.getDocumentRelsXml());
+        // Add required files
+        if (!this.originalZip) {
+            zip.file('[Content_Types].xml', this.getContentTypesXml());
+            zip.file('_rels/.rels', this.getRelsXml());
+            zip.file('word/_rels/document.xml.rels', this.getDocumentRelsXml());
+            zip.file('word/styles.xml', this.getStylesXml(content.attrs));
+        } else {
+            // Check if styles.xml exists, if not write it (rare but possible in simple XML docs)
+            if (!zip.file('word/styles.xml')) {
+                zip.file('word/styles.xml', this.getStylesXml(content.attrs));
+            }
+        }
 
-        // Add styles.xml for heading definitions
-        zip.file('word/styles.xml', this.getStylesXml(content.attrs));
+        zip.file('word/document.xml', documentXml);
 
         // Add numbering.xml for list formatting
         // If we have the original ZIP, try to preserve the original numbering.xml for better fidelity
         let useOriginalNumbering = false;
         if (this.originalZip) {
-            if (this.originalZip) {
-                const originalNumberingXml = await this.originalZip.file('word/numbering.xml')?.async('string');
-                if (originalNumberingXml) {
-                    // Append any NEW generated numbering definitions to the original file
-                    // This handles lists that were forked (e.g. for numbering restart) which need new definitions
-                    const closingTag = '</w:numbering>';
-                    if (originalNumberingXml.includes(closingTag)) {
-                        const newDefinitions = this.getNumberingXml(true);
-                        const mergedXml = originalNumberingXml.replace(closingTag, '') + newDefinitions + closingTag;
-                        zip.file('word/numbering.xml', mergedXml);
-                    } else {
-                        zip.file('word/numbering.xml', originalNumberingXml);
-                    }
-                    useOriginalNumbering = true;
+            const originalNumberingXml = await this.originalZip.file('word/numbering.xml')?.async('string');
+            if (originalNumberingXml) {
+                // Append any NEW generated numbering definitions to the original file
+                // This handles lists that were forked (e.g. for numbering restart) which need new definitions
+                const closingTag = '</w:numbering>';
+                if (originalNumberingXml.includes(closingTag)) {
+                    const newDefinitions = this.getNumberingXml(true);
+                    const mergedXml = originalNumberingXml.replace(closingTag, '') + newDefinitions + closingTag;
+                    zip.file('word/numbering.xml', mergedXml);
+                } else {
+                    zip.file('word/numbering.xml', originalNumberingXml);
                 }
+                useOriginalNumbering = true;
             }
         }
         if (!useOriginalNumbering) {
@@ -103,8 +143,20 @@ export class DocxWriter {
             zip.file('word/comments.xml', this.serializeComments());
         }
 
+        if (this.originalZip) {
+            // Update [Content_Types].xml if needed
+            await this.updateContentTypesXml(zip);
+
+            // Update word/_rels/document.xml.rels if needed
+            await this.updateDocumentRelsXml(zip);
+        }
+
         // Generate blob
-        return zip.generateAsync({ type: 'blob', mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' });
+        return zip.generateAsync({
+            type: 'blob',
+            mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            compression: 'DEFLATE'
+        });
     }
 
     /**
@@ -164,12 +216,20 @@ export class DocxWriter {
     /**
      * Serialize full document
      */
-    private serializeDocument(content: JSONContent[], docAttrs?: any): string {
+    private serializeDocument(content: JSONContent[], docAttrs?: DocAttrs): string {
         const bodyContent = content.map(node => this.serializeNode(node, 0)).join('');
 
         let sectPr = '';
-        // If we have captured section properties, use them for fidelity
-        if (docAttrs && (docAttrs.pageSize || docAttrs.pageMargins || docAttrs.docGrid)) {
+        // If we have captured section properties, use them for fidelity (headers, footers, etc.)
+        if (docAttrs && docAttrs.sectPrElements) {
+            const builder = new XMLBuilder({
+                ignoreAttributes: false,
+                attributeNamePrefix: '',
+                preserveOrder: true,
+                suppressEmptyNode: true,
+            });
+            sectPr = `<w:sectPr>${builder.build(docAttrs.sectPrElements)}</w:sectPr>`;
+        } else if (docAttrs && (docAttrs.pageSize || docAttrs.pageMargins || docAttrs.docGrid)) {
             sectPr += '<w:sectPr>';
 
             // Page Size
@@ -177,8 +237,6 @@ export class DocxWriter {
                 const w = docAttrs.pageSize['w:w'] || docAttrs.pageSize['w'] || '11906';
                 const h = docAttrs.pageSize['w:h'] || docAttrs.pageSize['h'] || '16838';
                 sectPr += `<w:pgSz w:w="${w}" w:h="${h}"/>`;
-            } else {
-                sectPr += `<w:pgSz w:w="11906" w:h="16838"/>`;
             }
 
             // Page Margins
@@ -191,14 +249,15 @@ export class DocxWriter {
                 const footer = docAttrs.pageMargins['w:footer'] || '708';
                 const gutter = docAttrs.pageMargins['w:gutter'] || '0';
                 sectPr += `<w:pgMar w:top="${top}" w:right="${right}" w:bottom="${bottom}" w:left="${left}" w:header="${header}" w:footer="${footer}" w:gutter="${gutter}"/>`;
-            } else {
-                sectPr += `<w:pgMar w:top="1985" w:right="1701" w:bottom="1701" w:left="1701" w:header="708" w:footer="708" w:gutter="0"/>`;
             }
 
-            // Columns (default to 1)
-            sectPr += `<w:cols w:space="708"/>`;
+            // Columns - Keep only if present in original
+            if (docAttrs.cols) {
+                const space = docAttrs.cols['w:space'] || '720';
+                sectPr += `<w:cols w:space="${space}"/>`;
+            }
 
-            // Document Grid - Critical for Japanese spacing
+            // Document Grid - Keep only if present in original
             if (docAttrs.docGrid) {
                 const linePitch = docAttrs.docGrid['w:linePitch'] || '360';
                 const type = docAttrs.docGrid['w:type'] || 'lines';
@@ -207,8 +266,8 @@ export class DocxWriter {
 
             sectPr += '</w:sectPr>';
         } else {
-            // Default A4 if no attributes captured
-            sectPr = `<w:sectPr><w:pgSz w:w="11906" w:h="16838"/><w:pgMar w:top="1985" w:right="1701" w:bottom="1701" w:left="1701" w:header="708" w:footer="708" w:gutter="0"/><w:cols w:space="708"/><w:docGrid w:linePitch="360" w:type="lines"/></w:sectPr>`;
+            // Minimal A4 if no attributes captured
+            sectPr = `<w:sectPr><w:pgSz w:w="11906" w:h="16838"/><w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440" w:header="720" w:footer="720" w:gutter="0"/></w:sectPr>`;
         }
 
         return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
@@ -261,52 +320,68 @@ ${sectPr}
     private serializeParagraph(node: JSONContent, listInfo?: { numId: number; ilvl: number }): string {
         let pPr = '';
 
+        const attrs = node.attrs as DocAttrs | undefined;
+
+        // Add paragraph style if present (for heading-style paragraphs)
+        if (attrs?.styleId) {
+            pPr += `<w:pStyle w:val="${attrs.styleId}"/>`;
+        }
+
         // Add list properties if this is a list item
         if (listInfo) {
             pPr += `<w:numPr><w:ilvl w:val="${listInfo.ilvl}"/><w:numId w:val="${listInfo.numId}"/></w:numPr>`;
         }
 
-        // Add spacing (lineHeight, spacingBefore, spacingAfter)
-        // lineHeight from DocxReader is already in twips (raw value from w:spacing w:line)
-        if (node.attrs?.snapToGrid) {
-            pPr += `<w:snapToGrid w:val="${node.attrs.snapToGrid}"/>`;
+        // Keep with next / keep lines together (overrides style outline behavior)
+        // Only output if explicitly set in the original document (not null or undefined)
+        if (attrs?.keepNext != null) {
+            pPr += `<w:keepNext w:val="${attrs.keepNext}"/>`;
         }
-        if (node.attrs?.contextualSpacing) {
-            pPr += `<w:contextualSpacing w:val="${node.attrs.contextualSpacing}"/>`;
+        if (attrs?.keepLines != null) {
+            pPr += `<w:keepLines w:val="${attrs.keepLines}"/>`;
         }
 
-        if (node.attrs?.lineHeight || node.attrs?.spacingBefore || node.attrs?.spacingAfter) {
+        // Add spacing (lineHeight, spacingBefore, spacingAfter)
+        // lineHeight from DocxReader is already in twips (raw value from w:spacing w:line)
+        if (attrs?.snapToGrid) {
+            pPr += `<w:snapToGrid w:val="${attrs.snapToGrid}"/>`;
+        }
+        if (attrs?.contextualSpacing) {
+            pPr += `<w:contextualSpacing w:val="${attrs.contextualSpacing}"/>`;
+        }
+
+        if (attrs?.lineHeight || attrs?.spacingBefore || attrs?.spacingAfter) {
             let spacingAttrs = '';
-            if (node.attrs?.spacingBefore) {
-                spacingAttrs += ` w:before="${node.attrs.spacingBefore}"`;
+            if (attrs?.spacingBefore) {
+                spacingAttrs += ` w:before="${attrs.spacingBefore}"`;
             }
-            if (node.attrs?.spacingAfter) {
-                spacingAttrs += ` w:after="${node.attrs.spacingAfter}"`;
+            if (attrs?.spacingAfter) {
+                spacingAttrs += ` w:after="${attrs.spacingAfter}"`;
             }
-            if (node.attrs?.lineHeight) {
-                const rule = node.attrs.lineRule || 'auto';
-                spacingAttrs += ` w:line="${node.attrs.lineHeight}" w:lineRule="${rule}"`;
+            if (attrs?.lineHeight) {
+                const rule = attrs.lineRule || 'auto';
+                spacingAttrs += ` w:line="${attrs.lineHeight}" w:lineRule="${rule}"`;
             }
             pPr += `<w:spacing${spacingAttrs}/>`;
         }
 
         // Add text alignment
-        if (node.attrs?.textAlign) {
+        if (attrs?.textAlign) {
             const alignMap: Record<string, string> = {
                 'left': 'left',
                 'center': 'center',
                 'right': 'right',
                 'justify': 'both'
             };
-            pPr += `<w:jc w:val="${alignMap[node.attrs.textAlign] || 'left'}"/>`;
+            pPr += `<w:jc w:val="${alignMap[attrs.textAlign] || 'left'}"/>`;
         }
 
         // Add indentation
-        if (node.attrs?.indent || node.attrs?.hanging || node.attrs?.firstLine) {
+        if (attrs?.indent || attrs?.hanging || attrs?.firstLine) {
             let pPrIndent = '';
 
-            if (node.attrs?.indent) {
-                const val = parseInt(node.attrs.indent);
+            if (attrs?.indent) {
+                const val = parseInt(attrs.indent as string);
                 // Heuristic: values > 20 are likely already twips (from Reader), 
                 // values <= 20 are likely levels (from Editor).
                 // 20 levels = 10 inches, unlikely to be exceeded by normal levels.
@@ -314,12 +389,12 @@ ${sectPr}
                 pPrIndent += ` w:left="${indentTwips}"`;
             }
 
-            if (node.attrs?.hanging) {
-                pPrIndent += ` w:hanging="${node.attrs.hanging}"`;
+            if (attrs?.hanging) {
+                pPrIndent += ` w:hanging="${attrs.hanging}"`;
             }
 
-            if (node.attrs?.firstLine) {
-                pPrIndent += ` w:firstLine="${node.attrs.firstLine}"`;
+            if (attrs?.firstLine) {
+                pPrIndent += ` w:firstLine="${attrs.firstLine}"`;
             }
 
             if (pPrIndent) {
@@ -327,8 +402,27 @@ ${sectPr}
             }
         }
 
-        if (node.attrs?.contextualSpacing) {
-            pPr += `<w:contextualSpacing w:val="${node.attrs.contextualSpacing}"/>`;
+        if (attrs?.contextualSpacing) {
+            pPr += `<w:contextualSpacing w:val="${attrs.contextualSpacing}"/>`;
+        }
+
+        // Add paragraph default run properties (w:rPr inside w:pPr)
+        if (attrs?.pPrFontSize || attrs?.pPrFontFamily) {
+            let rPr = '';
+            if (attrs?.pPrFontFamily) {
+                const font = this.escapeXml(attrs.pPrFontFamily as string);
+                rPr += `<w:rFonts w:ascii="${font}" w:eastAsia="${font}" w:hAnsi="${font}" w:cs="${font}"/>`;
+            }
+            if (attrs?.pPrFontSize) {
+                // Convert from pt to half-points
+                const ptVal = parseFloat((attrs.pPrFontSize as string).replace('pt', ''));
+                const halfPts = Math.round(ptVal * 2);
+                rPr += `<w:sz w:val="${halfPts}"/>`;
+                rPr += `<w:szCs w:val="${halfPts}"/>`;
+            }
+            if (rPr) {
+                pPr += `<w:rPr>${rPr}</w:rPr>`;
+            }
         }
 
         const pPrXml = pPr ? `<w:pPr>${pPr}</w:pPr>` : '';
@@ -353,44 +447,56 @@ ${sectPr}
      * Serialize heading
      */
     private serializeHeading(node: JSONContent): string {
-        const level = node.attrs?.level || 1;
+        const attrs = node.attrs as DocAttrs | undefined;
+        const level = attrs?.level || 1;
         const content = this.serializeParagraphContent(node.content || []);
 
-        let pPr = `<w:pStyle w:val="Heading${level}"/>`;
+        // Use original style ID if available, otherwise generate from level
+        const styleId = attrs?.styleId || `Heading${level}`;
+        let pPr = `<w:pStyle w:val="${styleId}"/>`;
 
-        if (node.attrs?.snapToGrid) {
-            pPr += `<w:snapToGrid w:val="${node.attrs.snapToGrid}"/>`;
+        if (attrs?.snapToGrid) {
+            pPr += `<w:snapToGrid w:val="${attrs.snapToGrid}"/>`;
+        }
+
+        // Keep with next / keep lines together (overrides style outline behavior)
+        // Only output if explicitly set in the original document (not null or undefined)
+        if (attrs?.keepNext != null) {
+            pPr += `<w:keepNext w:val="${attrs.keepNext}"/>`;
+        }
+        if (attrs?.keepLines != null) {
+            pPr += `<w:keepLines w:val="${attrs.keepLines}"/>`;
         }
 
         // Add spacing (lineHeight, spacingBefore, spacingAfter)
-        if (node.attrs?.lineHeight || node.attrs?.spacingBefore || node.attrs?.spacingAfter) {
+        if (attrs?.lineHeight || attrs?.spacingBefore || attrs?.spacingAfter) {
             let spacingAttrs = '';
-            if (node.attrs?.spacingBefore) {
-                spacingAttrs += ` w:before="${node.attrs.spacingBefore}"`;
+            if (attrs?.spacingBefore) {
+                spacingAttrs += ` w:before="${attrs.spacingBefore}"`;
             }
-            if (node.attrs?.spacingAfter) {
-                spacingAttrs += ` w:after="${node.attrs.spacingAfter}"`;
+            if (attrs?.spacingAfter) {
+                spacingAttrs += ` w:after="${attrs.spacingAfter}"`;
             }
-            if (node.attrs?.lineHeight) {
-                const rule = node.attrs.lineRule || 'auto';
-                spacingAttrs += ` w:line="${node.attrs.lineHeight}" w:lineRule="${rule}"`;
+            if (attrs?.lineHeight) {
+                const rule = attrs.lineRule || 'auto';
+                spacingAttrs += ` w:line="${attrs.lineHeight}" w:lineRule="${rule}"`;
             }
             pPr += `<w:spacing${spacingAttrs}/>`;
         }
 
         // Add text alignment
-        if (node.attrs?.textAlign) {
+        if (attrs?.textAlign) {
             const alignMap: Record<string, string> = {
                 'left': 'left',
                 'center': 'center',
                 'right': 'right',
                 'justify': 'both'
             };
-            pPr += `<w:jc w:val="${alignMap[node.attrs.textAlign] || 'left'}"/>`;
+            pPr += `<w:jc w:val="${alignMap[attrs.textAlign] || 'left'}"/>`;
         }
 
-        if (node.attrs?.contextualSpacing) {
-            pPr += `<w:contextualSpacing w:val="${node.attrs.contextualSpacing}"/>`;
+        if (attrs?.contextualSpacing) {
+            pPr += `<w:contextualSpacing w:val="${attrs.contextualSpacing}"/>`;
         }
 
         return `<w:p><w:pPr>${pPr}</w:pPr>${content}</w:p>`;
@@ -428,20 +534,20 @@ ${sectPr}
                     break;
                 case 'textStyle':
                     if (mark.attrs?.color) {
-                        rPr += `<w:color w:val="${this.colorToDocx(mark.attrs.color)}"/>`;
+                        rPr += `<w:color w:val="${this.colorToDocx(mark.attrs.color as string)}"/>`;
                     }
                     if (mark.attrs?.fontSize) {
-                        const halfPts = this.fontSizeToHalfPoints(mark.attrs.fontSize);
+                        const halfPts = this.fontSizeToHalfPoints(mark.attrs.fontSize as string);
                         rPr += `<w:sz w:val="${halfPts}"/>`;
                     }
                     if (mark.attrs?.fontFamily) {
-                        const font = this.escapeXml(mark.attrs.fontFamily);
+                        const font = this.escapeXml(mark.attrs.fontFamily as string);
                         rPr += `<w:rFonts w:ascii="${font}" w:eastAsia="${font}" w:hAnsi="${font}" w:cs="${font}"/>`;
                     }
                     break;
                 case 'highlight':
                     if (mark.attrs?.color) {
-                        rPr += `<w:highlight w:val="${this.highlightColorToDocx(mark.attrs.color)}"/>`;
+                        rPr += `<w:highlight w:val="${this.highlightColorToDocx(mark.attrs.color as string)}"/>`;
                     }
                     break;
             }
@@ -459,25 +565,28 @@ ${sectPr}
 
         // Wrap in track change elements
         if (insertionMark) {
+            const attrs = insertionMark.attrs as DocAttrs | undefined;
             const id = this.insertionIdCounter++;
-            const author = insertionMark.attrs?.author || 'Unknown';
-            const date = insertionMark.attrs?.date || new Date().toISOString();
+            const author = attrs?.author || 'Unknown';
+            const date = attrs?.date || new Date().toISOString();
             runXml = `<w:ins w:id="${id}" w:author="${this.escapeXml(author)}" w:date="${date}">${runXml}</w:ins>`;
         }
 
         if (deletionMark) {
+            const attrs = deletionMark.attrs as DocAttrs | undefined;
             const id = this.deletionIdCounter++;
-            const author = deletionMark.attrs?.author || 'Unknown';
-            const date = deletionMark.attrs?.date || new Date().toISOString();
+            const author = attrs?.author || 'Unknown';
+            const date = attrs?.date || new Date().toISOString();
             runXml = `<w:del w:id="${id}" w:author="${this.escapeXml(author)}" w:date="${date}">${runXml}</w:del>`;
         }
 
         // Handle comments
         if (commentMark) {
-            const commentId = commentMark.attrs?.commentId || String(this.comments.length);
-            const author = commentMark.attrs?.author || 'Unknown';
-            const date = commentMark.attrs?.date || new Date().toISOString();
-            const content = commentMark.attrs?.content || '';
+            const attrs = commentMark.attrs as DocAttrs | undefined;
+            const commentId = attrs?.commentId || String(this.comments.length);
+            const author = attrs?.author || 'Unknown';
+            const date = attrs?.date || new Date().toISOString();
+            const content = attrs?.content || '';
 
             // Add to comments collection
             if (!this.comments.find(c => c.id === commentId)) {
@@ -497,18 +606,19 @@ ${sectPr}
      */
     private serializeList(node: JSONContent, isOrdered: boolean, level: number): string {
         const items = node.content || [];
-        const effectiveLevel = node.attrs?.level !== undefined ? parseInt(node.attrs.level) : level;
+        const attrs = node.attrs as DocAttrs | undefined;
+        const effectiveLevel = attrs?.level !== undefined ? (attrs.level as number) : level;
 
         // Use original numId if available (for round-trip fidelity)
         let numId: number;
 
         // Check for specific start value (e.g. continuing a list after interruption)
-        if (isOrdered && node.attrs?.start && node.attrs.start > 1) {
+        if (isOrdered && attrs?.start && (attrs.start as number) > 1) {
             numId = this.nextNumId++;
-            this.numIdStarts[numId] = parseInt(node.attrs.start);
+            this.numIdStarts[numId] = attrs.start as number;
             this.usedNumIds.push(numId);
-        } else if (node.attrs?.originalNumId) {
-            numId = parseInt(node.attrs.originalNumId);
+        } else if (attrs?.originalNumId) {
+            numId = parseInt(attrs.originalNumId as string);
             if (!this.usedNumIds.includes(numId)) {
                 this.usedNumIds.push(numId);
             }
@@ -649,7 +759,7 @@ ${relationships}
     /**
      * Get word/styles.xml - defines heading and paragraph styles
      */
-    private getStylesXml(docAttrs?: any): string {
+    private getStylesXml(docAttrs?: DocAttrs): string {
         let docDefaults = '';
         if (docAttrs?.docDefaults) {
             const d = docAttrs.docDefaults;
@@ -657,7 +767,8 @@ ${relationships}
 
             // Fonts
             if (d.rFonts) {
-                const attrs = d.rFonts[':@'] || d.rFonts;
+                const rFonts = d.rFonts as Record<string, Record<string, string>>;
+                const attrs = (rFonts[':@'] || d.rFonts) as Record<string, string>;
                 let fontAttrs = '';
                 Object.keys(attrs).forEach(k => {
                     fontAttrs += ` ${k}="${attrs[k]}"`;
@@ -667,18 +778,21 @@ ${relationships}
 
             // Size
             if (d.sz) {
-                const attrs = d.sz[':@'] || d.sz;
+                const sz = d.sz as Record<string, Record<string, string>>;
+                const attrs = (sz[':@'] || d.sz) as Record<string, string>;
                 const val = attrs['w:val'] || attrs['val'];
                 if (val) rPrInner += `<w:sz w:val="${val}"/>`;
             }
             if (d.szCs) {
-                const attrs = d.szCs[':@'] || d.szCs;
+                const szCs = d.szCs as Record<string, Record<string, string>>;
+                const attrs = (szCs[':@'] || d.szCs) as Record<string, string>;
                 const val = attrs['w:val'] || attrs['val'];
                 if (val) rPrInner += `<w:szCs w:val="${val}"/>`;
             }
 
             if (d.lang) {
-                const attrs = d.lang[':@'] || d.lang;
+                const lang = d.lang as Record<string, Record<string, string>>;
+                const attrs = (lang[':@'] || d.lang) as Record<string, string>;
                 let langAttrs = '';
                 Object.keys(attrs).forEach(k => {
                     langAttrs += ` ${k}="${attrs[k]}"`;
@@ -688,55 +802,227 @@ ${relationships}
 
             let pPrInner = '';
             if (d.pPr) {
-                if (d.pPr.widowControl) {
-                    pPrInner += `<w:widowControl w:val="${d.pPr.widowControl}"/>`;
+                const pPr = d.pPr as Record<string, string>;
+                if (pPr.widowControl) {
+                    pPrInner += `<w:widowControl w:val="${pPr.widowControl}"/>`;
                 }
             }
 
-            if (rPrInner || pPrInner) {
-                docDefaults = `<w:docDefaults>`;
-                if (rPrInner) {
-                    docDefaults += `<w:rPrDefault><w:rPr>${rPrInner}</w:rPr></w:rPrDefault>`;
-                }
-                if (pPrInner) {
-                    docDefaults += `<w:pPrDefault><w:pPr>${pPrInner}</w:pPr></w:pPrDefault>`;
-                }
-                docDefaults += `</w:docDefaults>`;
+            if (rPrInner) {
+                docDefaults += `<w:rPrDefault><w:rPr>${rPrInner}</w:rPr></w:rPrDefault>`;
+            }
+            if (pPrInner) {
+                docDefaults += `<w:pPrDefault><w:pPr>${pPrInner}</w:pPr></w:pPrDefault>`;
             }
         }
 
         return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
-${docDefaults}
-<w:style w:type="paragraph" w:styleId="Normal" w:default="1">
+<w:styles xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:w14="http://schemas.microsoft.com/office/word/2010/wordml" xmlns:w15="http://schemas.microsoft.com/office/word/2012/wordml" mc:Ignorable="w14 w15">
+<w:docDefaults>${docDefaults}</w:docDefaults>
+<w:style w:type="paragraph" w:styleId="Normal">
 <w:name w:val="Normal"/>
-<w:rPr/>
+<w:qFormat/>
 </w:style>
 <w:style w:type="paragraph" w:styleId="Heading1">
 <w:name w:val="Heading 1"/>
 <w:basedOn w:val="Normal"/>
-<w:pPr><w:outlineLvl w:val="0"/></w:pPr>
-<w:rPr><w:b/><w:sz w:val="32"/></w:rPr>
+<w:next w:val="Normal"/>
+<w:link w:val="Heading1Char"/>
+<w:uiPriority w:val="9"/>
+<w:qFormat/>
+<w:rsid w:val="00F17435"/>
+<w:pPr>
+<w:keepNext/>
+<w:keepLines/>
+<w:spacing w:before="480" w:after="0"/>
+<w:outlineLvl w:val="0"/>
+</w:pPr>
+<w:rPr>
+<w:rFonts w:asciiTheme="majorHAnsi" w:eastAsiaTheme="majorEastAsia" w:hAnsiTheme="majorHAnsi" w:cstheme="majorBidi"/>
+<w:b/>
+<w:bCs/>
+<w:color w:val="2E74B5" w:themeColor="accent1" w:themeShade="BF"/>
+<w:sz w:val="32"/>
+<w:szCs w:val="32"/>
+</w:rPr>
 </w:style>
 <w:style w:type="paragraph" w:styleId="Heading2">
 <w:name w:val="Heading 2"/>
 <w:basedOn w:val="Normal"/>
-<w:pPr><w:outlineLvl w:val="1"/></w:pPr>
-<w:rPr><w:b/><w:sz w:val="28"/></w:rPr>
+<w:next w:val="Normal"/>
+<w:link w:val="Heading2Char"/>
+<w:uiPriority w:val="9"/>
+<w:unhideWhenUsed/>
+<w:qFormat/>
+<w:rsid w:val="00F17435"/>
+<w:pPr>
+<w:keepNext/>
+<w:keepLines/>
+<w:spacing w:before="260" w:after="260"/>
+<w:outlineLvl w:val="1"/>
+</w:pPr>
+<w:rPr>
+<w:rFonts w:asciiTheme="majorHAnsi" w:eastAsiaTheme="majorEastAsia" w:hAnsiTheme="majorHAnsi" w:cstheme="majorBidi"/>
+<w:b/>
+<w:bCs/>
+<w:color w:val="2E74B5" w:themeColor="accent1" w:themeShade="BF"/>
+<w:sz w:val="26"/>
+<w:szCs w:val="26"/>
+</w:rPr>
 </w:style>
 <w:style w:type="paragraph" w:styleId="Heading3">
 <w:name w:val="Heading 3"/>
 <w:basedOn w:val="Normal"/>
-<w:pPr><w:outlineLvl w:val="2"/></w:pPr>
-<w:rPr><w:b/><w:sz w:val="24"/></w:rPr>
-</w:style>
-<w:style w:type="paragraph" w:styleId="ListParagraph">
-<w:name w:val="List Paragraph"/>
-<w:basedOn w:val="Normal"/>
-<w:pPr><w:ind w:left="720"/></w:pPr>
+<w:next w:val="Normal"/>
+<w:link w:val="Heading3Char"/>
+<w:uiPriority w:val="9"/>
+<w:unhideWhenUsed/>
+<w:qFormat/>
+<w:rsid w:val="00F17435"/>
+<w:pPr>
+<w:keepNext/>
+<w:keepLines/>
+<w:spacing w:before="260" w:after="260"/>
+<w:outlineLvl w:val="2"/>
+</w:pPr>
+<w:rPr>
+<w:rFonts w:asciiTheme="majorHAnsi" w:eastAsiaTheme="majorEastAsia" w:hAnsiTheme="majorHAnsi" w:cstheme="majorBidi"/>
+<w:b/>
+<w:bCs/>
+<w:color w:val="1F4D78" w:themeColor="accent1" w:themeShade="7F"/>
+<w:sz w:val="24"/>
+<w:szCs w:val="24"/>
+</w:rPr>
 </w:style>
 </w:styles>`;
     }
+
+    /**
+     * Update [Content_Types].xml logic
+     */
+    private async updateContentTypesXml(zip: JSZip): Promise<void> {
+        const contentTypesXml = await zip.file('[Content_Types].xml')?.async('string');
+        if (!contentTypesXml) return;
+
+        const parser = new XMLParser({
+            ignoreAttributes: false,
+            attributeNamePrefix: '',
+        });
+        const contentTypes = parser.parse(contentTypesXml);
+
+        // Ensure <Types> exists and has Overrides
+        if (!contentTypes.Types) return;
+
+        // Ensure Overrides is always an array
+        let overrides = contentTypes.Types.Override || [];
+        if (!Array.isArray(overrides)) {
+            overrides = [overrides];
+        }
+
+        const existingParts = new Set<string>(overrides.map((o: any) => o.PartName));
+        let modified = false;
+
+        // Check for numbering.xml
+        if (zip.file('word/numbering.xml') && !existingParts.has('/word/numbering.xml')) {
+            overrides.push({
+                PartName: '/word/numbering.xml',
+                ContentType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.numbering+xml'
+            });
+            modified = true;
+        }
+
+        // Check for comments.xml
+        if (this.comments.length > 0 && !existingParts.has('/word/comments.xml')) {
+            overrides.push({
+                PartName: '/word/comments.xml',
+                ContentType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.comments+xml'
+            });
+            modified = true;
+        }
+
+        if (modified) {
+            contentTypes.Types.Override = overrides;
+            const builder = new XMLBuilder({
+                ignoreAttributes: false,
+                attributeNamePrefix: '',
+                format: true,
+                suppressEmptyNode: true,
+            });
+            zip.file('[Content_Types].xml', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n${builder.build(contentTypes)}`);
+        }
+    }
+
+    /**
+     * Update word/_rels/document.xml.rels logic
+     */
+    private async updateDocumentRelsXml(zip: JSZip): Promise<void> {
+        const relsXml = await zip.file('word/_rels/document.xml.rels')?.async('string');
+        if (!relsXml) return;
+
+        const parser = new XMLParser({
+            ignoreAttributes: false,
+            attributeNamePrefix: '',
+        });
+        const rels = parser.parse(relsXml);
+
+        if (!rels.Relationships) return;
+
+        let relationships = rels.Relationships.Relationship || [];
+        if (!Array.isArray(relationships)) {
+            relationships = [relationships];
+        }
+
+        // Get max rId
+        let maxId = 0;
+        const existingTargets = new Set<string>();
+
+        relationships.forEach((rel: any) => {
+            if (rel.Id && rel.Id.startsWith('rId')) {
+                const id = parseInt(rel.Id.substring(3));
+                if (!isNaN(id) && id > maxId) maxId = id;
+            }
+            if (rel.Target) {
+                existingTargets.add(rel.Target);
+            }
+        });
+
+        let modified = false;
+
+        // Add numbering relationship if needed
+        if (zip.file('word/numbering.xml') && !existingTargets.has('numbering.xml')) {
+            maxId++;
+            relationships.push({
+                Id: `rId${maxId}`,
+                Type: 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/numbering',
+                Target: 'numbering.xml'
+            });
+            modified = true;
+        }
+
+        // Add comments relationship if needed
+        if (this.comments.length > 0 && !existingTargets.has('comments.xml')) {
+            maxId++;
+            relationships.push({
+                Id: `rId${maxId}`,
+                Type: 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/comments',
+                Target: 'comments.xml'
+            });
+            modified = true;
+        }
+
+        if (modified) {
+            rels.Relationships.Relationship = relationships;
+            const builder = new XMLBuilder({
+                ignoreAttributes: false,
+                attributeNamePrefix: '',
+                format: true,
+                suppressEmptyNode: true,
+            });
+            zip.file('word/_rels/document.xml.rels', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n${builder.build(rels)}`);
+        }
+    }
+
+
 
     /**
     * Get word/numbering.xml - defines list numbering formats

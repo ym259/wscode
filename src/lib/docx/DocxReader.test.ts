@@ -115,6 +115,7 @@ describe('DocxReader', () => {
 
         expect(result.content[0].type).toBe('heading');
         expect(result.content[0].attrs.level).toBe(1);
+        expect(result.content[0].attrs.styleId).toBe('Heading1');
     });
 
     it('should parse run formatting (Bold, Italic)', async () => {

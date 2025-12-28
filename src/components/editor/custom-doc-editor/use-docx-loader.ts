@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { useEffect, useState, Dispatch, SetStateAction } from 'react';
+import JSZip from 'jszip';
 import { Editor } from '@tiptap/react';
 import { DocxReader } from '../../../lib/docx/DocxReader';
 import { Comment } from './types';
@@ -8,10 +9,12 @@ interface UseDocxLoaderProps {
     file?: File;
     editor: Editor | null;
     setDocAttrs: Dispatch<SetStateAction<any>>;
+
     setComments: Dispatch<SetStateAction<Comment[]>>;
+    setOriginalZip: Dispatch<SetStateAction<JSZip | null>>;
 }
 
-export const useDocxLoader = ({ file, editor, setDocAttrs, setComments }: UseDocxLoaderProps) => {
+export const useDocxLoader = ({ file, editor, setDocAttrs, setComments, setOriginalZip }: UseDocxLoaderProps) => {
     const [isLoading, setIsLoading] = useState(false);
 
     useEffect(() => {
@@ -21,8 +24,11 @@ export const useDocxLoader = ({ file, editor, setDocAttrs, setComments }: UseDoc
             setIsLoading(true);
             try {
                 const arrayBuffer = await file.arrayBuffer();
+                const zip = await JSZip.loadAsync(arrayBuffer);
+                setOriginalZip(zip);
+
                 const reader = new DocxReader();
-                const content = await reader.load(arrayBuffer);
+                const content = await reader.loadFromZip(zip);
 
                 if (content.attrs) {
                     setDocAttrs(content.attrs);
@@ -59,7 +65,7 @@ export const useDocxLoader = ({ file, editor, setDocAttrs, setComments }: UseDoc
         };
 
         loadFile();
-    }, [file, editor, setDocAttrs, setComments]);
+    }, [file, editor, setDocAttrs, setComments, setOriginalZip]);
 
     return { isLoading };
 };
