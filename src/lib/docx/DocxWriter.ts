@@ -6,13 +6,48 @@ import { XMLBuilder } from 'fast-xml-parser';
  */
 interface JSONContent {
     type: string;
-    attrs?: Record<string, any>;
+    attrs?: Record<string, unknown>;
     content?: JSONContent[];
     text?: string;
     marks?: Array<{
         type: string;
-        attrs?: Record<string, any>;
+        attrs?: Record<string, unknown>;
     }>;
+}
+
+interface DocAttrs {
+    sectPrElements?: unknown[];
+    pageSize?: Record<string, string>;
+    pageMargins?: Record<string, string>;
+    docGrid?: Record<string, string>;
+    cols?: Record<string, string>;
+    styleId?: string;
+    docDefaults?: Record<string, unknown>; // Complex nested structure from XML parser
+    keepNext?: string | number;
+    keepLines?: string | number;
+    snapToGrid?: string;
+    contextualSpacing?: string;
+    lineHeight?: string;
+    lineRule?: string;
+    spacingBefore?: string;
+    spacingAfter?: string;
+    textAlign?: string;
+    indent?: string;
+    hanging?: string;
+    firstLine?: string;
+    pPrFontSize?: string;
+    pPrFontFamily?: string;
+    originalNumId?: string;
+    start?: number;
+    level?: number;
+    backgroundColor?: string;
+    color?: string;
+    fontSize?: string;
+    fontFamily?: string;
+    author?: string;
+    date?: string;
+    commentId?: string;
+    content?: string;
 }
 
 /**
@@ -171,7 +206,7 @@ export class DocxWriter {
     /**
      * Serialize full document
      */
-    private serializeDocument(content: JSONContent[], docAttrs?: any): string {
+    private serializeDocument(content: JSONContent[], docAttrs?: DocAttrs): string {
         const bodyContent = content.map(node => this.serializeNode(node, 0)).join('');
 
         let sectPr = '';
@@ -275,9 +310,11 @@ ${sectPr}
     private serializeParagraph(node: JSONContent, listInfo?: { numId: number; ilvl: number }): string {
         let pPr = '';
 
+        const attrs = node.attrs as DocAttrs | undefined;
+
         // Add paragraph style if present (for heading-style paragraphs)
-        if (node.attrs?.styleId) {
-            pPr += `<w:pStyle w:val="${node.attrs.styleId}"/>`;
+        if (attrs?.styleId) {
+            pPr += `<w:pStyle w:val="${attrs.styleId}"/>`;
         }
 
         // Add list properties if this is a list item
@@ -287,54 +324,54 @@ ${sectPr}
 
         // Keep with next / keep lines together (overrides style outline behavior)
         // Only output if explicitly set in the original document (not null or undefined)
-        if (node.attrs?.keepNext != null) {
-            pPr += `<w:keepNext w:val="${node.attrs.keepNext}"/>`;
+        if (attrs?.keepNext != null) {
+            pPr += `<w:keepNext w:val="${attrs.keepNext}"/>`;
         }
-        if (node.attrs?.keepLines != null) {
-            pPr += `<w:keepLines w:val="${node.attrs.keepLines}"/>`;
+        if (attrs?.keepLines != null) {
+            pPr += `<w:keepLines w:val="${attrs.keepLines}"/>`;
         }
 
         // Add spacing (lineHeight, spacingBefore, spacingAfter)
         // lineHeight from DocxReader is already in twips (raw value from w:spacing w:line)
-        if (node.attrs?.snapToGrid) {
-            pPr += `<w:snapToGrid w:val="${node.attrs.snapToGrid}"/>`;
+        if (attrs?.snapToGrid) {
+            pPr += `<w:snapToGrid w:val="${attrs.snapToGrid}"/>`;
         }
-        if (node.attrs?.contextualSpacing) {
-            pPr += `<w:contextualSpacing w:val="${node.attrs.contextualSpacing}"/>`;
+        if (attrs?.contextualSpacing) {
+            pPr += `<w:contextualSpacing w:val="${attrs.contextualSpacing}"/>`;
         }
 
-        if (node.attrs?.lineHeight || node.attrs?.spacingBefore || node.attrs?.spacingAfter) {
+        if (attrs?.lineHeight || attrs?.spacingBefore || attrs?.spacingAfter) {
             let spacingAttrs = '';
-            if (node.attrs?.spacingBefore) {
-                spacingAttrs += ` w:before="${node.attrs.spacingBefore}"`;
+            if (attrs?.spacingBefore) {
+                spacingAttrs += ` w:before="${attrs.spacingBefore}"`;
             }
-            if (node.attrs?.spacingAfter) {
-                spacingAttrs += ` w:after="${node.attrs.spacingAfter}"`;
+            if (attrs?.spacingAfter) {
+                spacingAttrs += ` w:after="${attrs.spacingAfter}"`;
             }
-            if (node.attrs?.lineHeight) {
-                const rule = node.attrs.lineRule || 'auto';
-                spacingAttrs += ` w:line="${node.attrs.lineHeight}" w:lineRule="${rule}"`;
+            if (attrs?.lineHeight) {
+                const rule = attrs.lineRule || 'auto';
+                spacingAttrs += ` w:line="${attrs.lineHeight}" w:lineRule="${rule}"`;
             }
             pPr += `<w:spacing${spacingAttrs}/>`;
         }
 
         // Add text alignment
-        if (node.attrs?.textAlign) {
+        if (attrs?.textAlign) {
             const alignMap: Record<string, string> = {
                 'left': 'left',
                 'center': 'center',
                 'right': 'right',
                 'justify': 'both'
             };
-            pPr += `<w:jc w:val="${alignMap[node.attrs.textAlign] || 'left'}"/>`;
+            pPr += `<w:jc w:val="${alignMap[attrs.textAlign] || 'left'}"/>`;
         }
 
         // Add indentation
-        if (node.attrs?.indent || node.attrs?.hanging || node.attrs?.firstLine) {
+        if (attrs?.indent || attrs?.hanging || attrs?.firstLine) {
             let pPrIndent = '';
 
-            if (node.attrs?.indent) {
-                const val = parseInt(node.attrs.indent);
+            if (attrs?.indent) {
+                const val = parseInt(attrs.indent as string);
                 // Heuristic: values > 20 are likely already twips (from Reader), 
                 // values <= 20 are likely levels (from Editor).
                 // 20 levels = 10 inches, unlikely to be exceeded by normal levels.
@@ -342,12 +379,12 @@ ${sectPr}
                 pPrIndent += ` w:left="${indentTwips}"`;
             }
 
-            if (node.attrs?.hanging) {
-                pPrIndent += ` w:hanging="${node.attrs.hanging}"`;
+            if (attrs?.hanging) {
+                pPrIndent += ` w:hanging="${attrs.hanging}"`;
             }
 
-            if (node.attrs?.firstLine) {
-                pPrIndent += ` w:firstLine="${node.attrs.firstLine}"`;
+            if (attrs?.firstLine) {
+                pPrIndent += ` w:firstLine="${attrs.firstLine}"`;
             }
 
             if (pPrIndent) {
@@ -355,20 +392,20 @@ ${sectPr}
             }
         }
 
-        if (node.attrs?.contextualSpacing) {
-            pPr += `<w:contextualSpacing w:val="${node.attrs.contextualSpacing}"/>`;
+        if (attrs?.contextualSpacing) {
+            pPr += `<w:contextualSpacing w:val="${attrs.contextualSpacing}"/>`;
         }
 
         // Add paragraph default run properties (w:rPr inside w:pPr)
-        if (node.attrs?.pPrFontSize || node.attrs?.pPrFontFamily) {
+        if (attrs?.pPrFontSize || attrs?.pPrFontFamily) {
             let rPr = '';
-            if (node.attrs?.pPrFontFamily) {
-                const font = this.escapeXml(node.attrs.pPrFontFamily);
+            if (attrs?.pPrFontFamily) {
+                const font = this.escapeXml(attrs.pPrFontFamily as string);
                 rPr += `<w:rFonts w:ascii="${font}" w:eastAsia="${font}" w:hAnsi="${font}" w:cs="${font}"/>`;
             }
-            if (node.attrs?.pPrFontSize) {
+            if (attrs?.pPrFontSize) {
                 // Convert from pt to half-points
-                const ptVal = parseFloat(node.attrs.pPrFontSize.replace('pt', ''));
+                const ptVal = parseFloat((attrs.pPrFontSize as string).replace('pt', ''));
                 const halfPts = Math.round(ptVal * 2);
                 rPr += `<w:sz w:val="${halfPts}"/>`;
                 rPr += `<w:szCs w:val="${halfPts}"/>`;
@@ -400,55 +437,56 @@ ${sectPr}
      * Serialize heading
      */
     private serializeHeading(node: JSONContent): string {
-        const level = node.attrs?.level || 1;
+        const attrs = node.attrs as DocAttrs | undefined;
+        const level = attrs?.level || 1;
         const content = this.serializeParagraphContent(node.content || []);
 
         // Use original style ID if available, otherwise generate from level
-        const styleId = node.attrs?.styleId || `Heading${level}`;
+        const styleId = attrs?.styleId || `Heading${level}`;
         let pPr = `<w:pStyle w:val="${styleId}"/>`;
 
-        if (node.attrs?.snapToGrid) {
-            pPr += `<w:snapToGrid w:val="${node.attrs.snapToGrid}"/>`;
+        if (attrs?.snapToGrid) {
+            pPr += `<w:snapToGrid w:val="${attrs.snapToGrid}"/>`;
         }
 
         // Keep with next / keep lines together (overrides style outline behavior)
         // Only output if explicitly set in the original document (not null or undefined)
-        if (node.attrs?.keepNext != null) {
-            pPr += `<w:keepNext w:val="${node.attrs.keepNext}"/>`;
+        if (attrs?.keepNext != null) {
+            pPr += `<w:keepNext w:val="${attrs.keepNext}"/>`;
         }
-        if (node.attrs?.keepLines != null) {
-            pPr += `<w:keepLines w:val="${node.attrs.keepLines}"/>`;
+        if (attrs?.keepLines != null) {
+            pPr += `<w:keepLines w:val="${attrs.keepLines}"/>`;
         }
 
         // Add spacing (lineHeight, spacingBefore, spacingAfter)
-        if (node.attrs?.lineHeight || node.attrs?.spacingBefore || node.attrs?.spacingAfter) {
+        if (attrs?.lineHeight || attrs?.spacingBefore || attrs?.spacingAfter) {
             let spacingAttrs = '';
-            if (node.attrs?.spacingBefore) {
-                spacingAttrs += ` w:before="${node.attrs.spacingBefore}"`;
+            if (attrs?.spacingBefore) {
+                spacingAttrs += ` w:before="${attrs.spacingBefore}"`;
             }
-            if (node.attrs?.spacingAfter) {
-                spacingAttrs += ` w:after="${node.attrs.spacingAfter}"`;
+            if (attrs?.spacingAfter) {
+                spacingAttrs += ` w:after="${attrs.spacingAfter}"`;
             }
-            if (node.attrs?.lineHeight) {
-                const rule = node.attrs.lineRule || 'auto';
-                spacingAttrs += ` w:line="${node.attrs.lineHeight}" w:lineRule="${rule}"`;
+            if (attrs?.lineHeight) {
+                const rule = attrs.lineRule || 'auto';
+                spacingAttrs += ` w:line="${attrs.lineHeight}" w:lineRule="${rule}"`;
             }
             pPr += `<w:spacing${spacingAttrs}/>`;
         }
 
         // Add text alignment
-        if (node.attrs?.textAlign) {
+        if (attrs?.textAlign) {
             const alignMap: Record<string, string> = {
                 'left': 'left',
                 'center': 'center',
                 'right': 'right',
                 'justify': 'both'
             };
-            pPr += `<w:jc w:val="${alignMap[node.attrs.textAlign] || 'left'}"/>`;
+            pPr += `<w:jc w:val="${alignMap[attrs.textAlign] || 'left'}"/>`;
         }
 
-        if (node.attrs?.contextualSpacing) {
-            pPr += `<w:contextualSpacing w:val="${node.attrs.contextualSpacing}"/>`;
+        if (attrs?.contextualSpacing) {
+            pPr += `<w:contextualSpacing w:val="${attrs.contextualSpacing}"/>`;
         }
 
         return `<w:p><w:pPr>${pPr}</w:pPr>${content}</w:p>`;
@@ -486,20 +524,20 @@ ${sectPr}
                     break;
                 case 'textStyle':
                     if (mark.attrs?.color) {
-                        rPr += `<w:color w:val="${this.colorToDocx(mark.attrs.color)}"/>`;
+                        rPr += `<w:color w:val="${this.colorToDocx(mark.attrs.color as string)}"/>`;
                     }
                     if (mark.attrs?.fontSize) {
-                        const halfPts = this.fontSizeToHalfPoints(mark.attrs.fontSize);
+                        const halfPts = this.fontSizeToHalfPoints(mark.attrs.fontSize as string);
                         rPr += `<w:sz w:val="${halfPts}"/>`;
                     }
                     if (mark.attrs?.fontFamily) {
-                        const font = this.escapeXml(mark.attrs.fontFamily);
+                        const font = this.escapeXml(mark.attrs.fontFamily as string);
                         rPr += `<w:rFonts w:ascii="${font}" w:eastAsia="${font}" w:hAnsi="${font}" w:cs="${font}"/>`;
                     }
                     break;
                 case 'highlight':
                     if (mark.attrs?.color) {
-                        rPr += `<w:highlight w:val="${this.highlightColorToDocx(mark.attrs.color)}"/>`;
+                        rPr += `<w:highlight w:val="${this.highlightColorToDocx(mark.attrs.color as string)}"/>`;
                     }
                     break;
             }
@@ -517,25 +555,28 @@ ${sectPr}
 
         // Wrap in track change elements
         if (insertionMark) {
+            const attrs = insertionMark.attrs as DocAttrs | undefined;
             const id = this.insertionIdCounter++;
-            const author = insertionMark.attrs?.author || 'Unknown';
-            const date = insertionMark.attrs?.date || new Date().toISOString();
+            const author = attrs?.author || 'Unknown';
+            const date = attrs?.date || new Date().toISOString();
             runXml = `<w:ins w:id="${id}" w:author="${this.escapeXml(author)}" w:date="${date}">${runXml}</w:ins>`;
         }
 
         if (deletionMark) {
+            const attrs = deletionMark.attrs as DocAttrs | undefined;
             const id = this.deletionIdCounter++;
-            const author = deletionMark.attrs?.author || 'Unknown';
-            const date = deletionMark.attrs?.date || new Date().toISOString();
+            const author = attrs?.author || 'Unknown';
+            const date = attrs?.date || new Date().toISOString();
             runXml = `<w:del w:id="${id}" w:author="${this.escapeXml(author)}" w:date="${date}">${runXml}</w:del>`;
         }
 
         // Handle comments
         if (commentMark) {
-            const commentId = commentMark.attrs?.commentId || String(this.comments.length);
-            const author = commentMark.attrs?.author || 'Unknown';
-            const date = commentMark.attrs?.date || new Date().toISOString();
-            const content = commentMark.attrs?.content || '';
+            const attrs = commentMark.attrs as DocAttrs | undefined;
+            const commentId = attrs?.commentId || String(this.comments.length);
+            const author = attrs?.author || 'Unknown';
+            const date = attrs?.date || new Date().toISOString();
+            const content = attrs?.content || '';
 
             // Add to comments collection
             if (!this.comments.find(c => c.id === commentId)) {
@@ -555,18 +596,19 @@ ${sectPr}
      */
     private serializeList(node: JSONContent, isOrdered: boolean, level: number): string {
         const items = node.content || [];
-        const effectiveLevel = node.attrs?.level !== undefined ? parseInt(node.attrs.level) : level;
+        const attrs = node.attrs as DocAttrs | undefined;
+        const effectiveLevel = attrs?.level !== undefined ? (attrs.level as number) : level;
 
         // Use original numId if available (for round-trip fidelity)
         let numId: number;
 
         // Check for specific start value (e.g. continuing a list after interruption)
-        if (isOrdered && node.attrs?.start && node.attrs.start > 1) {
+        if (isOrdered && attrs?.start && (attrs.start as number) > 1) {
             numId = this.nextNumId++;
-            this.numIdStarts[numId] = parseInt(node.attrs.start);
+            this.numIdStarts[numId] = attrs.start as number;
             this.usedNumIds.push(numId);
-        } else if (node.attrs?.originalNumId) {
-            numId = parseInt(node.attrs.originalNumId);
+        } else if (attrs?.originalNumId) {
+            numId = parseInt(attrs.originalNumId as string);
             if (!this.usedNumIds.includes(numId)) {
                 this.usedNumIds.push(numId);
             }
@@ -707,7 +749,7 @@ ${relationships}
     /**
      * Get word/styles.xml - defines heading and paragraph styles
      */
-    private getStylesXml(docAttrs?: any): string {
+    private getStylesXml(docAttrs?: DocAttrs): string {
         let docDefaults = '';
         if (docAttrs?.docDefaults) {
             const d = docAttrs.docDefaults;
@@ -715,7 +757,8 @@ ${relationships}
 
             // Fonts
             if (d.rFonts) {
-                const attrs = d.rFonts[':@'] || d.rFonts;
+                const rFonts = d.rFonts as Record<string, Record<string, string>>;
+                const attrs = (rFonts[':@'] || d.rFonts) as Record<string, string>;
                 let fontAttrs = '';
                 Object.keys(attrs).forEach(k => {
                     fontAttrs += ` ${k}="${attrs[k]}"`;
@@ -725,18 +768,21 @@ ${relationships}
 
             // Size
             if (d.sz) {
-                const attrs = d.sz[':@'] || d.sz;
+                const sz = d.sz as Record<string, Record<string, string>>;
+                const attrs = (sz[':@'] || d.sz) as Record<string, string>;
                 const val = attrs['w:val'] || attrs['val'];
                 if (val) rPrInner += `<w:sz w:val="${val}"/>`;
             }
             if (d.szCs) {
-                const attrs = d.szCs[':@'] || d.szCs;
+                const szCs = d.szCs as Record<string, Record<string, string>>;
+                const attrs = (szCs[':@'] || d.szCs) as Record<string, string>;
                 const val = attrs['w:val'] || attrs['val'];
                 if (val) rPrInner += `<w:szCs w:val="${val}"/>`;
             }
 
             if (d.lang) {
-                const attrs = d.lang[':@'] || d.lang;
+                const lang = d.lang as Record<string, Record<string, string>>;
+                const attrs = (lang[':@'] || d.lang) as Record<string, string>;
                 let langAttrs = '';
                 Object.keys(attrs).forEach(k => {
                     langAttrs += ` ${k}="${attrs[k]}"`;
@@ -746,8 +792,9 @@ ${relationships}
 
             let pPrInner = '';
             if (d.pPr) {
-                if (d.pPr.widowControl) {
-                    pPrInner += `<w:widowControl w:val="${d.pPr.widowControl}"/>`;
+                const pPr = d.pPr as Record<string, string>;
+                if (pPr.widowControl) {
+                    pPrInner += `<w:widowControl w:val="${pPr.widowControl}"/>`;
                 }
             }
 

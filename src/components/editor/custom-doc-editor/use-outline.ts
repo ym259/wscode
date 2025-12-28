@@ -15,7 +15,7 @@ export const useOutline = ({ editor }: UseOutlineProps) => {
 
         const updateOutline = () => {
             const headings: { id: string; text: string; level: number }[] = [];
-            editor.state.doc.descendants((node, pos) => {
+            editor.state.doc.descendants((node) => {
                 if (node.type.name === 'heading') {
                     const id = node.attrs.sdBlockId;
                     const text = node.textContent;

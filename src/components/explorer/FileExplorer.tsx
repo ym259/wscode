@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useCallback, useEffect } from 'react';
-import { FolderOpen, ChevronDown, ChevronsLeft, AlertCircle, X, FileText, FolderPlus, FilePlus, ChevronRight } from 'lucide-react';
+import { FolderOpen, ChevronDown, ChevronsLeft, AlertCircle, X, FileText, FolderPlus, FilePlus } from 'lucide-react';
 import { useWorkspace } from '@/contexts/WorkspaceContext';
 import { FileSystemItem } from '@/types';
 import FolderTree from './FolderTree';
