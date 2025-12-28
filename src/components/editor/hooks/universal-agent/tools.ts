@@ -34,10 +34,10 @@ export function getToolsForFileType(context: ToolContext, activeFileType: FileTy
     }
 
     if (activeFileType === 'xlsx') {
-        // Filter content tools for xlsx-specific ones
+        // Filter content tools for xlsx-specific ones (edit and format)
         const contentTools = getContentTools(context);
         const xlsxWriteTools = contentTools.filter(t =>
-            ['editSpreadsheet'].includes(t.function.name)
+            ['editSpreadsheet', 'formatSpreadsheet'].includes(t.function.name)
         );
         tools.push(...xlsxWriteTools);
     }
