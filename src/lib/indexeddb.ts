@@ -15,6 +15,7 @@ export const STORAGE_KEYS = {
     OPEN_TABS: 'open_tabs',
     ACTIVE_TAB_ID: 'active_tab_id',
     SETTINGS_OVERWRITE_ENABLED: 'settings_overwrite_enabled',
+    LIBRARY_FILES: 'library_files',
 } as const;
 
 /**

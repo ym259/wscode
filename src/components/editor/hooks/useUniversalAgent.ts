@@ -357,22 +357,33 @@ export function useUniversalAgent(config: UniversalAgentConfig) {
                     break;
                 }
 
-                // Execute tool calls
+                // Execute tool calls in parallel for faster processing
+                // First, add all function_call entries to messages
                 for (const tc of completedToolCalls) {
                     messages.push({ type: 'function_call', call_id: tc.id, name: tc.name, arguments: tc.args });
+                }
 
-                    const toolDef = toolDefinitions.find(t => t.function.name === tc.name);
-                    if (toolDef) {
+                // Execute all tools in parallel
+                const toolResults = await Promise.all(
+                    completedToolCalls.map(async (tc) => {
+                        const toolDef = toolDefinitions.find(t => t.function.name === tc.name);
+                        if (!toolDef) {
+                            return { tc, result: `Tool "${tc.name}" not found`, status: 'failure' as const, args: {} };
+                        }
                         try {
                             const args = JSON.parse(tc.args || '{}');
                             const result = await toolDef.execute(args);
-                            onUpdate({ type: 'tool_result', id: tc.id, result, status: 'success', args, timestamp: Date.now() });
-                            messages.push({ type: 'function_call_output', call_id: tc.id, output: String(result) });
+                            return { tc, result: String(result), status: 'success' as const, args };
                         } catch (error) {
-                            onUpdate({ type: 'tool_result', id: tc.id, result: String(error), status: 'failure', timestamp: Date.now() });
-                            messages.push({ type: 'function_call_output', call_id: tc.id, output: 'Error: ' + String(error) });
+                            return { tc, result: 'Error: ' + String(error), status: 'failure' as const, args: {} };
                         }
-                    }
+                    })
+                );
+
+                // Add all function_call_output entries and send updates
+                for (const { tc, result, status, args } of toolResults) {
+                    onUpdate({ type: 'tool_result', id: tc.id, result, status, args, timestamp: Date.now() });
+                    messages.push({ type: 'function_call_output', call_id: tc.id, output: result });
                 }
             }
 

@@ -58,6 +58,14 @@ interface WorkspaceContextType extends WorkspaceState {
     // Document Stats
     documentStats: DocumentStats | null;
     setDocumentStats: (stats: DocumentStats | null) => void;
+    // Library Support
+    libraryItems: FileSystemItem[];
+    createLibraryFile: (name: string) => Promise<void>;
+    updateLibraryFileContent: (path: string, content: string) => Promise<void>;
+    deleteLibraryFile: (path: string) => Promise<void>;
+    // Agent Inputs
+    agentInputOverride: string | null;
+    setAgentInputOverride: (value: string | null) => void;
 }
 
 export interface OutlineItem {
@@ -81,6 +89,8 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     const [navRequest, setNavRequest] = useState<string | null>(null);
     const [isOverwriteEnabled, setIsOverwriteEnabled] = useState(false);
     const [documentStats, setDocumentStats] = useState<DocumentStats | null>(null);
+    const [libraryItems, setLibraryItems] = useState<FileSystemItem[]>([]);
+    const [agentInputOverride, setAgentInputOverride] = useState<string | null>(null);
 
     // Load workspace state from IDB on mount
     useEffect(() => {
@@ -116,6 +126,12 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
             const storedOverwriteEnabled = await getFromDB<boolean>(STORAGE_KEYS.SETTINGS_OVERWRITE_ENABLED);
             if (typeof storedOverwriteEnabled === 'boolean') {
                 setIsOverwriteEnabled(storedOverwriteEnabled);
+            }
+
+            // Restore Library Items
+            const storedLibraryItems = await getFromDB<FileSystemItem[]>(STORAGE_KEYS.LIBRARY_FILES);
+            if (storedLibraryItems) {
+                setLibraryItems(storedLibraryItems);
             }
         };
         restoreWorkspace();
@@ -179,6 +195,44 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         });
     }, []);
 
+    const createLibraryFile = useCallback(async (name: string) => {
+        const newItem: FileSystemItem = {
+            name,
+            path: `library/${name}`, // Virtual path
+            type: 'file',
+            source: 'library',
+            content: '', // Start empty
+        };
+
+        setLibraryItems(prev => {
+            if (prev.find(i => i.path === newItem.path)) return prev;
+            const next = [...prev, newItem];
+            saveToDB(STORAGE_KEYS.LIBRARY_FILES, next);
+            return next;
+        });
+    }, []);
+
+    const updateLibraryFileContent = useCallback(async (path: string, content: string) => {
+        setLibraryItems(prev => {
+            const next = prev.map(item => {
+                if (item.path === path) {
+                    return { ...item, content };
+                }
+                return item;
+            });
+            saveToDB(STORAGE_KEYS.LIBRARY_FILES, next);
+            return next;
+        });
+    }, []);
+
+    const deleteLibraryFile = useCallback(async (path: string) => {
+        setLibraryItems(prev => {
+            const next = prev.filter(i => i.path !== path);
+            saveToDB(STORAGE_KEYS.LIBRARY_FILES, next);
+            return next;
+        });
+    }, []);
+
     const openFile = useCallback((item: FileSystemItem, file: File) => {
         // Check if file is already open
         const existingTab = openTabs.find((tab) => tab.path === item.path);
@@ -197,6 +251,9 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
             isDirty: false,
             handle: item.handle as FileSystemFileHandle,
         };
+
+        // If library file, we don't have a handle, but we have content potentially? 
+        // Actually for library file, the 'file' object passed in should be constructed from content.
 
         setOpenTabs((prev) => {
             const next = [...prev, newTab];
@@ -308,6 +365,15 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
                 },
                 documentStats,
                 setDocumentStats,
+                libraryItems,
+                createLibraryFile,
+                updateLibraryFileContent,
+                deleteLibraryFile,
+                agentInputOverride,
+                setAgentInputOverride: (val: string | null) => {
+                    setAgentInputOverride(val);
+                    if (val) setIsPanelOpen(true);
+                },
             }}
         >
             {children}

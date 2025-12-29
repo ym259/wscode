@@ -11,9 +11,24 @@ import { ToolDefinition, createTool, ToolContext } from './types';
  * @param includeDeletions If true, includes deleted text wrapped in ~~markers~~
  */
 const getTextContent = (node: any, includeDeletions: boolean = false): string => {
-    let text = '';
+    const textParts: string[] = [];
+    let currentPart = '';
 
-    node.descendants((child: any) => {
+    // Track block boundaries to insert newlines between list items
+    const blockTypes = ['listItem', 'paragraph', 'heading'];
+    let lastBlockPos = -1;
+
+    node.descendants((child: any, pos: number) => {
+        // Check if we're entering a new block-level element (for list items)
+        if (blockTypes.includes(child.type?.name)) {
+            // If we have accumulated text and this is a new block, add separator
+            if (currentPart.trim() && lastBlockPos !== -1 && pos !== lastBlockPos) {
+                textParts.push(currentPart);
+                currentPart = '';
+            }
+            lastBlockPos = pos;
+        }
+
         if (child.isText) {
             // Check if this text node has a deletion mark
             const hasDeletionMark = child.marks?.some((mark: any) => {
@@ -26,16 +41,22 @@ const getTextContent = (node: any, includeDeletions: boolean = false): string =>
 
             if (hasDeletionMark) {
                 if (includeDeletions) {
-                    text += `~~${child.text}~~`;
+                    currentPart += `~~${child.text}~~`;
                 }
             } else {
-                text += child.text || '';
+                currentPart += child.text || '';
             }
         }
         return true; // Continue traversing
     });
 
-    return text;
+    // Don't forget the last part
+    if (currentPart.trim()) {
+        textParts.push(currentPart);
+    }
+
+    // Join with newlines - this preserves list item separation
+    return textParts.join('\n');
 };
 
 export const getBlockTools = (context: ToolContext): ToolDefinition[] => {

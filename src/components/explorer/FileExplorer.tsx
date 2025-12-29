@@ -1,8 +1,9 @@
 'use client';
 
-import React, { useState, useCallback, useEffect } from 'react';
-import { FolderOpen, ChevronDown, ChevronsLeft, AlertCircle, X, FileText, FolderPlus, FilePlus } from 'lucide-react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
+import { FolderOpen, ChevronDown, ChevronRight, ChevronsLeft, AlertCircle, X, FileText, FolderPlus, FilePlus, Plus, ArrowRight } from 'lucide-react';
 import { useWorkspace } from '@/contexts/WorkspaceContext';
+import { Dialog } from '@/components/common/Dialog';
 import { FileSystemItem } from '@/types';
 import FolderTree from './FolderTree';
 import OutlineView from './OutlineView';
@@ -53,17 +54,75 @@ async function readDirectory(
     });
 }
 
+// =============================================================================
+// Section Header Component - Unified pattern for all collapsible sections
+// =============================================================================
+
+interface SectionHeaderProps {
+    title: string;
+    isExpanded: boolean;
+    onToggle: () => void;
+    badge?: number;
+    actions?: React.ReactNode;
+    showBorder?: boolean;
+}
+
+function SectionHeader({ title, isExpanded, onToggle, badge, actions, showBorder = false }: SectionHeaderProps) {
+    return (
+        <div
+            className={`${styles.sectionHeader} ${showBorder ? styles.sectionWithBorder : ''}`}
+            onClick={onToggle}
+        >
+            <span className={styles.sectionChevron}>
+                {isExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+            </span>
+            <span className={styles.sectionTitle}>{title}</span>
+            {badge !== undefined && (
+                <span className={styles.sectionBadge}>{badge}</span>
+            )}
+            {actions && (
+                <div className={styles.sectionActions} onClick={(e) => e.stopPropagation()}>
+                    {actions}
+                </div>
+            )}
+        </div>
+    );
+}
+
+// =============================================================================
+// Main FileExplorer Component
+// =============================================================================
+
 export default function FileExplorer({ onClose }: FileExplorerProps) {
-    const { rootItems, setRootItems, addWorkspaceItem, removeWorkspaceItem, openFile, activeOutline } = useWorkspace();
+    const {
+        rootItems, setRootItems, addWorkspaceItem, removeWorkspaceItem,
+        openFile, activeOutline, libraryItems, createLibraryFile,
+        deleteLibraryFile, setAgentInputOverride
+    } = useWorkspace();
+
     const [isLoading, setIsLoading] = useState(false);
     const [permissionStatus, setPermissionStatus] = useState<Record<string, 'granted' | 'prompt' | 'denied'>>({});
 
-    // Resizing state
-    const [outlineHeight, setOutlineHeight] = useState(40); // percentage
-    const [isResizing, setIsResizing] = useState(false);
+    // Section expansion states
+    const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set());
+    const [isLibraryExpanded, setIsLibraryExpanded] = useState(true);
     const [isOutlineExpanded, setIsOutlineExpanded] = useState(true);
-    const sidebarRef = React.useRef<HTMLDivElement>(null);
 
+    // Resizing state for outline
+    const [outlineHeight, setOutlineHeight] = useState(200); // pixels
+    const [isResizing, setIsResizing] = useState(false);
+    const explorerRef = useRef<HTMLDivElement>(null);
+
+    // Dialog state
+    const [isDialogVisible, setIsDialogVisible] = useState(false);
+    const [dialogInputValue, setDialogInputValue] = useState('');
+
+    // Initialize expanded folders when root items change
+    useEffect(() => {
+        setExpandedFolders(new Set(rootItems.map(item => item.path)));
+    }, [rootItems.length]); // eslint-disable-line react-hooks/exhaustive-deps
+
+    // Resize handlers
     const startResizing = useCallback(() => {
         setIsResizing(true);
         document.body.style.cursor = 'ns-resize';
@@ -77,14 +136,14 @@ export default function FileExplorer({ onClose }: FileExplorerProps) {
     }, []);
 
     const resize = useCallback((e: MouseEvent) => {
-        if (!isResizing || !sidebarRef.current) return;
+        if (!isResizing || !explorerRef.current) return;
 
-        const sidebarRect = sidebarRef.current.getBoundingClientRect();
-        const relativeY = e.clientY - sidebarRect.top;
-        const percentage = 100 - (relativeY / sidebarRect.height) * 100;
+        const explorerRect = explorerRef.current.getBoundingClientRect();
+        const newHeight = explorerRect.bottom - e.clientY;
 
-        // Clamp between 10% and 80%
-        const clamped = Math.min(Math.max(percentage, 10), 80);
+        // Clamp between 100px and 80% of explorer height
+        const maxHeight = explorerRect.height * 0.8;
+        const clamped = Math.min(Math.max(newHeight, 100), maxHeight);
         setOutlineHeight(clamped);
     }, [isResizing]);
 
@@ -158,7 +217,7 @@ export default function FileExplorer({ onClose }: FileExplorerProps) {
         } finally {
             setIsLoading(false);
         }
-    }, [rootItems.length, setRootItems, rootItems]); // eslint-disable-line react-hooks/exhaustive-deps
+    }, [rootItems, setRootItems]);
 
     const handleAddFolder = useCallback(async () => {
         try {
@@ -231,78 +290,107 @@ export default function FileExplorer({ onClose }: FileExplorerProps) {
         }
     }, [openFile]);
 
+    const toggleFolderExpand = useCallback((path: string) => {
+        setExpandedFolders(prev => {
+            const next = new Set(prev);
+            if (next.has(path)) {
+                next.delete(path);
+            } else {
+                next.add(path);
+            }
+            return next;
+        });
+    }, []);
+
+    // Library handlers
+    const handleAddLibraryFile = useCallback(() => {
+        setDialogInputValue('');
+        setIsDialogVisible(true);
+    }, []);
+
+    const handleConfirmAddFile = useCallback(async (name?: string) => {
+        if (name) {
+            await createLibraryFile(name);
+        }
+        setIsDialogVisible(false);
+    }, [createLibraryFile]);
+
+    const handleLibraryFileClick = useCallback((item: FileSystemItem) => {
+        const file = new File([item.content || ''], item.name, { type: 'text/markdown' });
+        openFile(item, file);
+    }, [openFile]);
+
+    const hasOutline = activeOutline && activeOutline.length > 0;
+
     return (
-        <div className={styles.explorer} ref={sidebarRef}>
+        <div className={styles.explorer} ref={explorerRef}>
+            {/* Top Header */}
             <div className={styles.header}>
-                <span className={styles.title}>EXPLORER</span>
-                <div className={styles.actions}>
-                    <button
-                        className={styles.actionButton}
-                        onClick={handleAddFile}
-                        title="Add File"
-                    >
+                <span className={styles.title}>Explorer</span>
+                <div className={styles.headerActions}>
+                    <button className={styles.actionButton} onClick={handleAddFile} title="Add File">
                         <FilePlus size={14} />
                     </button>
-                    <button
-                        className={styles.actionButton}
-                        onClick={handleAddFolder}
-                        title="Add Folder"
-                    >
+                    <button className={styles.actionButton} onClick={handleAddFolder} title="Add Folder">
                         <FolderPlus size={14} />
                     </button>
                     {onClose && (
-                        <button
-                            className={styles.actionButton}
-                            onClick={onClose}
-                            title="Minimize Sidebar"
-                        >
+                        <button className={styles.actionButton} onClick={onClose} title="Minimize Sidebar">
                             <ChevronsLeft size={14} />
                         </button>
                     )}
                 </div>
             </div>
 
-            <div
-                className={styles.treeContainer}
-                style={{
-                    flex: activeOutline.length > 0 && isOutlineExpanded ? `0 0 ${100 - outlineHeight}%` : '1',
-                    minHeight: activeOutline.length > 0 && isOutlineExpanded ? '20%' : undefined
-                }}
-            >
+            {/* Main Scrollable Area (Folders + Library) */}
+            <div className={styles.mainArea}>
+                {/* Opened Folders */}
                 {rootItems.length > 0 ? (
-                    rootItems.map((item) => (
-                        <div key={item.path} className={styles.rootSection}>
-                            <div className={styles.folderHeader}>
-                                {item.type === 'directory' ? <ChevronDown size={14} /> : <FileText size={14} />}
-                                <span
-                                    className={styles.folderName}
-                                    onClick={item.type === 'file' ? () => handleFileClick(item) : undefined}
-                                    style={{ cursor: item.type === 'file' ? 'pointer' : 'default' }}
-                                >
-                                    {item.name.toUpperCase()}
-                                </span>
-                                <button
-                                    className={styles.removeButton}
-                                    onClick={() => removeWorkspaceItem(item.path)}
-                                    title="Remove from Workspace"
-                                >
-                                    <X size={14} />
-                                </button>
-                            </div>
-
-                            {permissionStatus[item.path] === 'granted' ? (
-                                item.type === 'directory' && <FolderTree items={item.children || []} level={1} />
-                            ) : (
-                                <div className={styles.permissionPrompt}>
-                                    <AlertCircle size={16} className={styles.warningIcon} />
-                                    <p className={styles.permissionText}>Access needed</p>
+                    rootItems.map((item, index) => (
+                        <div key={item.path} className={styles.section}>
+                            <SectionHeader
+                                title={item.name.toUpperCase()}
+                                isExpanded={expandedFolders.has(item.path)}
+                                onToggle={() => toggleFolderExpand(item.path)}
+                                showBorder={index > 0}
+                                actions={
                                     <button
-                                        className={styles.restoreButton}
-                                        onClick={() => handleRestoreAccess(item)}
-                                        disabled={isLoading}
+                                        className={styles.actionButton}
+                                        onClick={() => removeWorkspaceItem(item.path)}
+                                        title="Remove from Workspace"
                                     >
-                                        {isLoading ? '...' : 'Restore'}
+                                        <X size={14} />
                                     </button>
+                                }
+                            />
+                            {expandedFolders.has(item.path) && (
+                                <div className={styles.sectionContent}>
+                                    {permissionStatus[item.path] === 'granted' ? (
+                                        item.type === 'directory' ? (
+                                            <FolderTree items={item.children || []} level={1} />
+                                        ) : (
+                                            <div
+                                                className={styles.item}
+                                                onClick={() => handleFileClick(item)}
+                                                style={{ paddingLeft: 26 }}
+                                            >
+                                                <FileText size={16} />
+                                                <span style={{ marginLeft: 6 }}>{item.name}</span>
+                                            </div>
+                                        )
+                                    ) : (
+                                        <div className={styles.permissionPrompt}>
+                                            <AlertCircle size={16} className={styles.warningIcon} />
+                                            <p className={styles.permissionText}>Access needed</p>
+                                            <button
+                                                className={styles.restoreButton}
+                                                onClick={() => handleRestoreAccess(item)}
+                                                disabled={isLoading}
+                                            >
+                                                {isLoading ? '...' : 'Restore'}
+                                            </button>
+                                        </div>
+                                    )}
                                 </div>
                             )}
                         </div>
@@ -320,16 +408,79 @@ export default function FileExplorer({ onClose }: FileExplorerProps) {
                         </button>
                     </div>
                 )}
+
+                {/* Library Section */}
+                <div className={`${styles.section} ${styles.sectionWithBorder}`}>
+                    <SectionHeader
+                        title="LIBRARY"
+                        isExpanded={isLibraryExpanded}
+                        onToggle={() => setIsLibraryExpanded(!isLibraryExpanded)}
+                        showBorder={true}
+                        actions={
+                            <button
+                                className={styles.actionButton}
+                                onClick={handleAddLibraryFile}
+                                title="Add Library File"
+                            >
+                                <Plus size={14} />
+                            </button>
+                        }
+                    />
+                    {isLibraryExpanded && (
+                        <div className={styles.sectionContent}>
+                            {libraryItems.length > 0 ? (
+                                libraryItems.map((item) => (
+                                    <div
+                                        key={item.path}
+                                        className={styles.item}
+                                        style={{ paddingLeft: 26 }}
+                                        onClick={() => handleLibraryFileClick(item)}
+                                    >
+                                        <FileText size={16} />
+                                        <span style={{ flex: 1, marginLeft: 6, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                            {item.name}
+                                        </span>
+                                        <div className={styles.itemActions}>
+                                            <button
+                                                className={styles.actionBut}
+                                                title="Apply to Chat"
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    setAgentInputOverride(`@${item.name} `);
+                                                }}
+                                            >
+                                                <ArrowRight size={14} />
+                                            </button>
+                                            <button
+                                                className={styles.removeButton}
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    if (confirm('Are you sure you want to delete this file?')) {
+                                                        deleteLibraryFile(item.path);
+                                                    }
+                                                }}
+                                                title="Delete File"
+                                            >
+                                                <X size={14} />
+                                            </button>
+                                        </div>
+                                    </div>
+                                ))
+                            ) : (
+                                <p className={styles.emptyTextSmall}>No library files</p>
+                            )}
+                        </div>
+                    )}
+                </div>
             </div>
 
-            {activeOutline.length > 0 && (
+            {/* Outline Section (fixed at bottom, resizable) */}
+            {hasOutline && (
                 <div
+                    className={styles.outlineSection}
                     style={{
-                        flex: isOutlineExpanded ? `0 0 ${outlineHeight}%` : '0 0 auto',
-                        display: 'flex',
-                        flexDirection: 'column',
-                        overflow: 'hidden',
-                        minHeight: 0
+                        height: isOutlineExpanded ? outlineHeight : 'auto',
+                        flexShrink: 0
                     }}
                 >
                     <OutlineView
@@ -338,6 +489,22 @@ export default function FileExplorer({ onClose }: FileExplorerProps) {
                     />
                 </div>
             )}
+
+            {/* Library File Dialog */}
+            <Dialog
+                isOpen={isDialogVisible}
+                title="ライブラリファイルの作成"
+                message="ファイル名を入力してください (例: notes.md):"
+                inputValue={dialogInputValue}
+                onChange={setDialogInputValue}
+                onConfirm={handleConfirmAddFile}
+                onCancel={() => setIsDialogVisible(false)}
+                isInput={true}
+                placeholder="ファイル名"
+                confirmLabel="作成"
+                cancelLabel="キャンセル"
+            />
         </div>
     );
 }
+

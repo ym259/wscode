@@ -22,6 +22,8 @@ export interface UniversalAgentConfig {
     activeFileHandle?: FileSystemFileHandle;
     /** Workspace files for cross-file access */
     workspaceFiles?: FileSystemItem[];
+    /** Library files for reference */
+    libraryItems?: FileSystemItem[];
     /** Handler setter from WorkspaceContext */
     setAIActionHandler: (handler: any) => void;
     /** Voice tool handler setter from WorkspaceContext */

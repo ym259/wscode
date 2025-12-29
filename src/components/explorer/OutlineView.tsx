@@ -47,7 +47,7 @@ function buildTree(items: OutlineItem[]): TreeItem[] {
 
 interface OutlineTreeItemProps {
     item: TreeItem;
-    minLevel: number; // Minimum level for normalization
+    minLevel: number;
     collapsedIds: Set<string>;
     onToggle: (id: string) => void;
     onNavigate: (id: string) => void;
@@ -157,17 +157,13 @@ export default function OutlineView({ onResizeStart, onExpandedChange }: Outline
                 />
             )}
 
-            {/* Header */}
-            <div
-                className={styles.header}
-                onClick={handleExpandToggle}
-            >
-                <div className={styles.headerLeft}>
-                    {isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-                    <FileText size={14} />
-                    <span>OUTLINE</span>
-                </div>
-                <span className={styles.itemCount}>{activeOutline.length}</span>
+            {/* Header - styled to match unified section pattern */}
+            <div className={styles.header} onClick={handleExpandToggle}>
+                <span className={styles.sectionChevron}>
+                    {isExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+                </span>
+                <span className={styles.sectionTitle}>OUTLINE</span>
+                <span className={styles.badge}>{activeOutline.length}</span>
             </div>
 
             {/* Content */}
@@ -188,3 +184,4 @@ export default function OutlineView({ onResizeStart, onExpandedChange }: Outline
         </div>
     );
 }
+

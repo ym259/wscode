@@ -23,7 +23,7 @@ export function buildToolContext(
     config: UniversalAgentConfig,
     aiActions?: AIActions | null
 ): ToolContext {
-    const { superdocRef, customEditorRef, workspaceFiles, activeFilePath, activeFileHandle, setCellValue, openFileInEditor } = config;
+    const { superdocRef, customEditorRef, workspaceFiles, libraryItems, activeFilePath, activeFileHandle, setCellValue, openFileInEditor } = config;
 
     // Helper to get TipTap editor from SuperDoc or CustomDocEditor
     const getEditor = () => {
@@ -45,6 +45,7 @@ export function buildToolContext(
         getActionMethods,
         getEditor,
         workspaceFiles,
+        libraryItems,
         activeFilePath,
         activeFileHandle,
         // Expose superdoc or custom editor as 'superdoc' for compatibility

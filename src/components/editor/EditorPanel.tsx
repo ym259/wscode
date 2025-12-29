@@ -18,8 +18,13 @@ const DocEditor = dynamic(() => import('./DocEditor'), {
     ),
 });
 
+const MarkdownEditor = dynamic(() => import('./MarkdownEditor'), {
+    ssr: false,
+    loading: () => <div className={styles.loading}>Loading editor...</div>,
+});
+
 export default function EditorPanel() {
-    const { openTabs, activeTabId } = useWorkspace();
+    const { openTabs, activeTabId, libraryItems } = useWorkspace();
 
     const activeTab = openTabs.find((tab) => tab.id === activeTabId);
 
@@ -30,7 +35,15 @@ export default function EditorPanel() {
                     <TabBar />
                     <div className={styles.editorContainer}>
                         {activeTab ? (
-                            activeTab.file ? (
+                            activeTab.path.startsWith('library/') ? (
+                                <MarkdownEditor
+                                    key={activeTab.id}
+                                    fileKey={activeTab.path}
+                                    initialContent={
+                                        libraryItems.find(i => i.path === activeTab.path)?.content || ''
+                                    }
+                                />
+                            ) : activeTab.file ? (
                                 <DocEditor
                                     key={activeTab.id}
                                     file={activeTab.file}

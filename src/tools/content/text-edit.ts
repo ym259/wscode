@@ -99,7 +99,10 @@ export const getTextEditTools = (context: ToolContext): ToolDefinition[] => {
                     if (contextBefore || contextAfter) {
                         msg += ` (Context: before="${contextBefore || ''}", after="${contextAfter || ''}")`;
                     }
-                    return msg;
+                    if (blockIndex !== undefined) {
+                        msg += ` (Block index: ${blockIndex})`;
+                    }
+                    throw new Error(msg);
                 }
 
                 let { from, to } = textPosition;

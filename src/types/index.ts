@@ -12,7 +12,9 @@ export interface FileSystemItem {
     path: string;
     type: 'file' | 'directory';
     children?: FileSystemItem[];
-    handle: FileSystemHandle;
+    handle?: FileSystemHandle;
+    source?: 'filesystem' | 'library';
+    content?: string; // For library files that are loaded efficiently
 }
 
 export interface EditorTab {

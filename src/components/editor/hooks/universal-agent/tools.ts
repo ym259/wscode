@@ -9,6 +9,7 @@ import {
     getReviewTools,
     getSearchTools
 } from '@/tools';
+import { getLibraryTools } from './library-tools';
 import { FileType } from './types';
 
 /**
@@ -24,6 +25,7 @@ export function getToolsForFileType(context: ToolContext, activeFileType: FileTy
     tools.push(...getNavigationTools(context));        // readFile, keywordSearch
     tools.push(...getSearchTools(context));            // searchDocument (agentic), scrollToBlock
     tools.push(...getSpreadsheetTools(context));       // listSpreadsheetSheets
+    tools.push(...getLibraryTools(context));           // readLibraryFile
 
     // WRITE TOOLS: Based on active file type
     if (activeFileType === 'docx') {
