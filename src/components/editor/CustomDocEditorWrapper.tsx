@@ -29,7 +29,7 @@ interface CustomDocEditorWrapperProps {
 }
 
 export default function CustomDocEditorWrapper({ file, fileName, handle }: CustomDocEditorWrapperProps) {
-    const { setAIActionHandler, setVoiceToolHandler, rootItems, setDocumentStats, libraryItems } = useWorkspace();
+    const { setAIActionHandler, setVoiceToolHandler, rootItems, setDocumentStats, libraryItems, openTabs } = useWorkspace();
     const editorRef = useRef<CustomDocEditorHandle>(null);
     const [editorReady, setEditorReady] = useState(false);
     const lastStatsUpdateRef = useRef<number>(0);
@@ -42,6 +42,7 @@ export default function CustomDocEditorWrapper({ file, fileName, handle }: Custo
         activeFileType: 'docx',
         activeFileHandle: handle,
         workspaceFiles: rootItems,
+        openTabs,
         libraryItems,
         setAIActionHandler,
         setVoiceToolHandler,

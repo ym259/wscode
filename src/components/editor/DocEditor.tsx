@@ -33,7 +33,7 @@ export default function DocEditor({ file, fileName, handle }: DocEditorProps) {
     }
 
     if (isPdf) {
-        return <PdfViewer file={file} />;
+        return <PdfViewer file={file} fileName={fileName} handle={handle} />;
     }
 
     if (isXlsx) {

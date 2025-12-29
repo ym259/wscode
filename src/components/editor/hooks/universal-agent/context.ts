@@ -57,6 +57,7 @@ export function buildToolContext(
             baseURL: window.location.origin + '/api/ai',
             dangerouslyAllowBrowser: true
         },
-        getCustomEditorRef: () => customEditorRef || null
+        getCustomEditorRef: () => customEditorRef || null,
+        addLoadedPdfFile: config.addLoadedPdfFile
     };
 }

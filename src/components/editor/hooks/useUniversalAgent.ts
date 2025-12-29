@@ -23,6 +23,42 @@ import { buildSystemPrompt } from './universal-agent/prompts';
 export type { UniversalAgentConfig, FileType } from './universal-agent/types';
 
 /**
+ * Build user message content with optional PDF files and images
+ */
+function buildUserMessage(
+    prompt: string,
+    images?: string[],
+    pdfFiles?: Array<{ file_id: string; filename: string }>
+): { type: 'message'; role: 'user'; content: any } {
+    const hasMultimodal = (images && images.length > 0) || (pdfFiles && pdfFiles.length > 0);
+
+    if (!hasMultimodal) {
+        return { type: 'message', role: 'user', content: prompt };
+    }
+
+    const content: any[] = [];
+
+    // Add PDF files first (so the model sees them before the prompt)
+    if (pdfFiles && pdfFiles.length > 0) {
+        for (const pdf of pdfFiles) {
+            content.push({ type: 'input_file', file_id: pdf.file_id });
+        }
+    }
+
+    // Add images
+    if (images && images.length > 0) {
+        for (const img of images) {
+            content.push({ type: 'input_image', image_url: img });
+        }
+    }
+
+    // Add text prompt last
+    content.push({ type: 'input_text', text: prompt });
+
+    return { type: 'message', role: 'user', content };
+}
+
+/**
  * Universal Agent Hook
  * 
  * Handles all file types with dynamic tool loading.
@@ -36,6 +72,7 @@ export function useUniversalAgent(config: UniversalAgentConfig) {
         activeFilePath,
         activeFileHandle,
         workspaceFiles,
+        openTabs,
         setAIActionHandler,
         setVoiceToolHandler,
         setCellValue,
@@ -46,6 +83,15 @@ export function useUniversalAgent(config: UniversalAgentConfig) {
 
     const aiActionsRef = useRef<AIActions | null>(null);
     const [isAiInitialized, setIsAiInitialized] = useState(false);
+
+    // Track loaded PDF file_ids for injection into next message
+    const loadedPdfFilesRef = useRef<Array<{ file_id: string; filename: string }>>([]);
+
+    // Callback to register a PDF file for injection
+    const addLoadedPdfFile = useCallback((file: { file_id: string; filename: string }) => {
+        console.log('[UniversalAgent] PDF loaded for injection:', file.filename, file.file_id);
+        loadedPdfFilesRef.current.push(file);
+    }, []);
 
     // Determine which editor mode we're in
     const usingSuperDoc = !!superdocRef?.current;
@@ -144,9 +190,11 @@ export function useUniversalAgent(config: UniversalAgentConfig) {
                 activeFileType,
                 activeFileHandle,
                 workspaceFiles,
+                openTabs,
                 setAIActionHandler,
                 setCellValue,
-                openFileInEditor
+                openFileInEditor,
+                addLoadedPdfFile
             };
             const context = buildToolContext(contextConfig, aiActionsRef.current);
 
@@ -244,17 +292,14 @@ export function useUniversalAgent(config: UniversalAgentConfig) {
                     }
                     return items;
                 }),
-                {
-                    type: 'message',
-                    role: 'user',
-                    content: (images && images.length > 0)
-                        ? [
-                            { type: 'input_text', text: prompt },
-                            ...images.map(img => ({ type: 'input_image', image_url: img }))
-                        ]
-                        : prompt
-                }
+                buildUserMessage(prompt, images, loadedPdfFilesRef.current)
             ];
+
+            // Clear loaded PDFs after injecting them into the message
+            if (loadedPdfFilesRef.current.length > 0) {
+                console.log('[UniversalAgent] Injected', loadedPdfFilesRef.current.length, 'PDF(s) into message');
+                loadedPdfFilesRef.current = [];
+            }
 
             // Convert tools to Responses API format
             const responsesApiTools = tools.map((t: any) => ({
@@ -384,6 +429,30 @@ export function useUniversalAgent(config: UniversalAgentConfig) {
                 for (const { tc, result, status, args } of toolResults) {
                     onUpdate({ type: 'tool_result', id: tc.id, result, status, args, timestamp: Date.now() });
                     messages.push({ type: 'function_call_output', call_id: tc.id, output: result });
+                }
+
+                // If any PDFs were loaded during this loop iteration, inject them for the next API call
+                if (loadedPdfFilesRef.current.length > 0) {
+                    console.log('[UniversalAgent] Injecting', loadedPdfFilesRef.current.length, 'PDF(s) loaded during tool execution');
+
+                    // Add a message with the PDF files attached
+                    const pdfContent: any[] = loadedPdfFilesRef.current.map(pdf => ({
+                        type: 'input_file',
+                        file_id: pdf.file_id
+                    }));
+                    pdfContent.push({
+                        type: 'input_text',
+                        text: `[System: The following PDF file(s) have been loaded into your context: ${loadedPdfFilesRef.current.map(p => p.filename).join(', ')}. You can now analyze their content.]`
+                    });
+
+                    messages.push({
+                        type: 'message',
+                        role: 'user',
+                        content: pdfContent
+                    });
+
+                    // Clear the loaded PDFs
+                    loadedPdfFilesRef.current = [];
                 }
             }
 

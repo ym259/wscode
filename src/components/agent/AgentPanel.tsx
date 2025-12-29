@@ -36,6 +36,9 @@ export default function AgentPanel({ isOpen, onClose }: AgentPanelProps) {
     // Track current search navigation index per message
     const [searchNavState, setSearchNavState] = useState<Record<string, number>>({});
 
+    // Track mentioned files as chips
+    const [mentionedFiles, setMentionedFiles] = useState<{ name: string; path: string }[]>([]);
+
     // Auto-scroll hook
     const {
         messagesEndRef,
@@ -176,6 +179,9 @@ export default function AgentPanel({ isOpen, onClose }: AgentPanelProps) {
                     selectedImages={selectedImages}
                     onImageAdd={(imgs) => setSelectedImages(prev => [...prev, ...imgs])}
                     onImageRemove={(index) => setSelectedImages(prev => prev.filter((_, i) => i !== index))}
+                    mentionedFiles={mentionedFiles}
+                    onMentionAdd={(file) => setMentionedFiles(prev => [...prev, file])}
+                    onMentionRemove={(path) => setMentionedFiles(prev => prev.filter(f => f.path !== path))}
                 />
             </form>
         </div>

@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { RefObject } from 'react';
 import { SuperDoc } from '@harbour-enterprises/superdoc';
-import { FileSystemItem } from '@/types';
+import { FileSystemItem, EditorTab } from '@/types';
 
 /** Supported file types for the agent */
 export type FileType = 'docx' | 'xlsx' | 'txt' | 'pdf' | null;
@@ -22,6 +22,8 @@ export interface UniversalAgentConfig {
     activeFileHandle?: FileSystemFileHandle;
     /** Workspace files for cross-file access */
     workspaceFiles?: FileSystemItem[];
+    /** Open tabs (for showing inactive documents in context) */
+    openTabs?: EditorTab[];
     /** Library files for reference */
     libraryItems?: FileSystemItem[];
     /** Handler setter from WorkspaceContext */
@@ -32,4 +34,6 @@ export interface UniversalAgentConfig {
     setCellValue?: (cell: string, value: string | number, sheetName?: string, options?: boolean | { isNumber?: boolean; isFormula?: boolean; style?: Record<string, unknown> }) => void;
     /** Callback to open a file in the editor (switches active file) */
     openFileInEditor?: (path: string) => Promise<boolean>;
+    /** Callback to register a loaded PDF file_id for injection into next message */
+    addLoadedPdfFile?: (file: { file_id: string; filename: string }) => void;
 }

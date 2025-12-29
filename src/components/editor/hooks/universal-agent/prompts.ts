@@ -5,7 +5,7 @@ import { UniversalAgentConfig } from './types';
  * Build system prompt based on file type and context
  */
 export function buildSystemPrompt(config: UniversalAgentConfig, docStats?: { charCount: number; blockCount: number; estimatedPages: number }): string {
-  const { activeFilePath, activeFileType, workspaceFiles, libraryItems } = config;
+  const { activeFilePath, activeFileType, workspaceFiles, libraryItems, openTabs } = config;
 
   // List workspace files for context
   const collectFiles = (items: FileSystemItem[], prefix = ''): string[] => {
@@ -22,12 +22,19 @@ export function buildSystemPrompt(config: UniversalAgentConfig, docStats?: { cha
   const workspaceFileList = workspaceFiles ? collectFiles(workspaceFiles).slice(0, 20).join(', ') : 'No files';
   const libraryFileList = libraryItems && libraryItems.length > 0 ? libraryItems.map(i => i.name).join(', ') : 'Empty';
 
+  // List other open tabs (inactive documents)
+  const inactiveTabs = openTabs
+    ?.filter(tab => tab.path !== activeFilePath)
+    .map(tab => tab.name)
+    .join(', ') || 'None';
+
   let prompt = `You are an intelligent document assistant with full workspace access.
 
 # Current Context
 **ACTIVE FILE: ${activeFilePath ? `"${activeFilePath}"` : 'None'}** (${activeFileType || 'unknown'})
 ${activeFilePath ? `You can READ any file, but can only WRITE to "${activeFilePath}".` : 'No file is active - open a file to enable editing.'}
 
+Other Open Documents: ${inactiveTabs}
 Workspace Files: ${workspaceFileList}${workspaceFiles && workspaceFiles.length > 20 ? '...' : ''}
 Library Files: ${libraryFileList}
 `;
@@ -42,6 +49,7 @@ Document Stats: ~${docStats.charCount.toLocaleString()} chars, ${docStats.estima
 
 ## Reading (any file)
 - \`readFile(path)\`: Read any file. For xlsx, use \`sheets\` param.
+- \`loadPdf(path)\`: Load a PDF into AI context for multimodal analysis. After loading, the PDF is available in your next response.
 - \`listSpreadsheetSheets(path)\`: List sheets in xlsx before reading.
 - \`searchDocument(query)\`: Search in active document.
 - \`readDocument()\`: Read active document structure with block IDs.
@@ -100,11 +108,16 @@ ${isLargeDoc
 - Take action first, then report what you did
 
 # Cross-File Workflow
-If asked to write data from one file (e.g., xlsx) to another file (e.g., docx):
-1. READ the source file first to get the data
-2. Call \`openFile("target-file.docx")\` to switch to the target
-3. Tell the user: "I've read the data and opened [target file]. Ready to insert the content. Should I proceed?"
-4. On user confirmation, continue with the edit using the now-available write tools
+If asked to write data from one file (e.g., xlsx, pdf) to this DOCX:
+1. READ the source file first:
+   - For xlsx: Use \`readFile(path, { sheets: [...] })\`
+   - For PDF: Use \`loadPdf(path)\` - the content will be available in your next turn
+2. Once you have the data, use DOCX write tools to insert it
+3. You do NOT need to call \`openFile\` since DOCX is already active
+
+Example - User says "Write a summary of @report.pdf in this document":
+1. Call \`loadPdf("report.pdf")\`
+2. Next turn: Analyze the PDF content and use \`literalReplace\` or \`insertTable\` to add summary to DOCX
 
 ## Large Document Review Strategy
 ${isLargeDoc ? `This is a large document (~${docStats.estimatedPages} pages). For comprehensive review:
@@ -142,12 +155,35 @@ If asked to write data to a DOCX file while viewing this XLSX:
 3. Tell the user: "I've read the data and opened [target file]. Ready to insert. Should I proceed?"
 4. On user confirmation, you'll have DOCX write tools available to complete the task
 `;
+  } else if (activeFileType === 'pdf') {
+    prompt += `
+# Capabilities
+
+## PDF Analysis (ACTIVE FILE)
+**IMPORTANT**: You have a PDF open. To analyze it, you MUST first call \`loadPdf("${activeFilePath}")\` to upload it to your context.
+
+After calling loadPdf, the PDF content will be available in your NEXT response, and you can:
+- Summarize the document
+- Answer questions about its content
+- Extract specific information (tables, dates, amounts, etc.)
+
+## Reading (any file)
+- \`loadPdf(path)\`: **USE THIS FIRST** to load the active PDF for analysis
+- \`readFile(path)\`: Read other files (docx, xlsx, txt)
+- \`listSpreadsheetSheets(path)\`: For xlsx files, list sheets first
+
+# Strategy
+1. User asks about the PDF → Call \`loadPdf("${activeFilePath}")\`
+2. Wait for next turn → PDF content is now in your context
+3. Answer the user's question based on the PDF content
+`;
   } else {
     prompt += `
 # Capabilities
 
 ## Reading (any file)
 - \`readFile(path)\`: Read any workspace file
+- \`loadPdf(path)\`: Load a PDF into AI context for multimodal analysis
 - \`readLibraryFile(name)\`: Read content of a library file
 - \`listSpreadsheetSheets(path)\`: For xlsx files, list sheets first
 

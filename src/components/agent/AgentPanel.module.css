@@ -415,6 +415,75 @@
     font-weight: 500;
 }
 
+/* Inline mention chips in contenteditable input */
+.inlineMentionChip {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 6px 2px 6px;
+    background: linear-gradient(135deg, rgba(59, 130, 246, 0.2), rgba(147, 51, 234, 0.2));
+    border: 1px solid rgba(59, 130, 246, 0.4);
+    border-radius: 4px;
+    font-size: 11px;
+    color: #60a5fa;
+    vertical-align: baseline;
+    margin: 0 2px;
+    cursor: default;
+    user-select: none;
+    white-space: nowrap;
+}
+
+.inlineMentionChip:hover {
+    background: linear-gradient(135deg, rgba(59, 130, 246, 0.3), rgba(147, 51, 234, 0.3));
+    border-color: rgba(59, 130, 246, 0.6);
+}
+
+.inlineMentionIcon {
+    display: inline-flex;
+    align-items: center;
+    color: #a78bfa;
+}
+
+.inlineMentionText {
+    font-weight: 500;
+    max-width: 150px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.inlineMentionRemove {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 14px;
+    height: 14px;
+    border: none;
+    background: transparent;
+    color: #60a5fa;
+    font-size: 14px;
+    font-weight: bold;
+    cursor: pointer;
+    border-radius: 2px;
+    line-height: 1;
+    padding: 0;
+    margin-left: 2px;
+    opacity: 0.7;
+    transition: all 0.15s ease;
+}
+
+.inlineMentionRemove:hover {
+    opacity: 1;
+    background: rgba(239, 68, 68, 0.2);
+    color: #f87171;
+}
+
+/* Placeholder for contenteditable */
+.input[data-placeholder]:empty::before {
+    content: attr(data-placeholder);
+    color: var(--text-muted);
+    pointer-events: none;
+}
+
 /* Selection mention in messages */
 .selectionMention {
     display: inline-flex;
@@ -945,6 +1014,7 @@
         opacity: 0;
         transform: translateX(-50%) translateY(10px);
     }
+
     to {
         opacity: 1;
         transform: translateX(-50%) translateY(0);

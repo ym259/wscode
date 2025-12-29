@@ -7,7 +7,8 @@ import {
     getBlockTools,
     getSpreadsheetTools,
     getReviewTools,
-    getSearchTools
+    getSearchTools,
+    getPdfTools
 } from '@/tools';
 import { getLibraryTools } from './library-tools';
 import { FileType } from './types';
@@ -26,6 +27,7 @@ export function getToolsForFileType(context: ToolContext, activeFileType: FileTy
     tools.push(...getSearchTools(context));            // searchDocument (agentic), scrollToBlock
     tools.push(...getSpreadsheetTools(context));       // listSpreadsheetSheets
     tools.push(...getLibraryTools(context));           // readLibraryFile
+    tools.push(...getPdfTools(context));               // loadPdf
 
     // WRITE TOOLS: Based on active file type
     if (activeFileType === 'docx') {

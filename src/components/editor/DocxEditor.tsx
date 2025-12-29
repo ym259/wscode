@@ -1,7 +1,7 @@
 'use client';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import React, { useRef, useEffect, useCallback } from 'react';
+import { useRef, useEffect, useCallback } from 'react';
 import styles from './DocEditor.module.css';
 import { TrackChangesToolbar } from './TrackChangesToolbar';
 import { useSuperDoc } from './hooks/useSuperDoc';
@@ -17,7 +17,7 @@ interface DocxEditorProps {
 }
 
 export default function DocxEditor({ file, fileName, handle }: DocxEditorProps) {
-    const { setAIActionHandler, rootItems, setAttachedSelection, openFile, setDocumentStats, libraryItems } = useWorkspace();
+    const { setAIActionHandler, rootItems, setAttachedSelection, openFile, setDocumentStats, libraryItems, openTabs } = useWorkspace();
     const containerRef = useRef<HTMLDivElement>(null);
     const lastStatsUpdateRef = useRef<number>(0);
 
@@ -85,6 +85,7 @@ export default function DocxEditor({ file, fileName, handle }: DocxEditorProps) 
         activeFileType: 'docx',
         activeFileHandle: handle,
         workspaceFiles: rootItems,
+        openTabs,
         libraryItems,
         setAIActionHandler,
         openFileInEditor: openFileByPath
