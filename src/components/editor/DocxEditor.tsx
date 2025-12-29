@@ -17,7 +17,7 @@ interface DocxEditorProps {
 }
 
 export default function DocxEditor({ file, fileName, handle }: DocxEditorProps) {
-    const { setAIActionHandler, rootItems, setAttachedSelection, openFile, setDocumentStats } = useWorkspace();
+    const { setAIActionHandler, rootItems, setAttachedSelection, openFile, setDocumentStats, libraryItems } = useWorkspace();
     const containerRef = useRef<HTMLDivElement>(null);
     const lastStatsUpdateRef = useRef<number>(0);
 
@@ -85,6 +85,7 @@ export default function DocxEditor({ file, fileName, handle }: DocxEditorProps) 
         activeFileType: 'docx',
         activeFileHandle: handle,
         workspaceFiles: rootItems,
+        libraryItems,
         setAIActionHandler,
         openFileInEditor: openFileByPath
     });

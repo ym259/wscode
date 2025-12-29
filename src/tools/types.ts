@@ -28,6 +28,7 @@ export interface ToolContext {
     getEditor: () => any;
     getActionMethods: () => any;
     workspaceFiles?: any[];
+    libraryItems?: any[];
     activeFilePath?: string;
     activeFileHandle?: FileSystemFileHandle;
     superdoc?: any;

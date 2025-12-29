@@ -5,7 +5,7 @@ import { UniversalAgentConfig } from './types';
  * Build system prompt based on file type and context
  */
 export function buildSystemPrompt(config: UniversalAgentConfig, docStats?: { charCount: number; blockCount: number; estimatedPages: number }): string {
-  const { activeFilePath, activeFileType, workspaceFiles } = config;
+  const { activeFilePath, activeFileType, workspaceFiles, libraryItems } = config;
 
   // List workspace files for context
   const collectFiles = (items: FileSystemItem[], prefix = ''): string[] => {
@@ -20,6 +20,7 @@ export function buildSystemPrompt(config: UniversalAgentConfig, docStats?: { cha
     return files;
   };
   const workspaceFileList = workspaceFiles ? collectFiles(workspaceFiles).slice(0, 20).join(', ') : 'No files';
+  const libraryFileList = libraryItems && libraryItems.length > 0 ? libraryItems.map(i => i.name).join(', ') : 'Empty';
 
   let prompt = `You are an intelligent document assistant with full workspace access.
 
@@ -28,6 +29,7 @@ export function buildSystemPrompt(config: UniversalAgentConfig, docStats?: { cha
 ${activeFilePath ? `You can READ any file, but can only WRITE to "${activeFilePath}".` : 'No file is active - open a file to enable editing.'}
 
 Workspace Files: ${workspaceFileList}${workspaceFiles && workspaceFiles.length > 20 ? '...' : ''}
+Library Files: ${libraryFileList}
 `;
 
   // Add file-type specific capabilities
@@ -146,6 +148,7 @@ If asked to write data to a DOCX file while viewing this XLSX:
 
 ## Reading (any file)
 - \`readFile(path)\`: Read any workspace file
+- \`readLibraryFile(name)\`: Read content of a library file
 - \`listSpreadsheetSheets(path)\`: For xlsx files, list sheets first
 
 Note: No active editable file. Open a DOCX or XLSX to enable editing.
@@ -153,12 +156,21 @@ Note: No active editable file. Open a DOCX or XLSX to enable editing.
   }
 
   prompt += `
-# Parallel Tool Execution
-You have parallel tool calling enabled. To maximize efficiency:
-- **Batch independent operations**: If you need to read multiple files, call \`readFile\` for all of them simultaneously
-- **Parallelize independent edits**: Multiple \`editText\` or \`literalReplace\` calls that don't depend on each other should be made in parallel
-- **Read before write**: Read operations should complete before dependent writes, but independent reads can run together
-- **Example**: To read 3 files → call all 3 \`readFile\` at once, not sequentially
+# Parallel Tool Execution (PERFORMANCE CRITICAL)
+**All independent tool calls will execute in parallel.** To maximize speed:
+- **Batch ALL independent operations in a single response**: Multiple \`editText\`, \`literalReplace\`, or \`readFile\` calls that don't depend on each other should ALL be made together
+- **Example - Reading multiple files**: Instead of calling \`readFile\` one at a time, call ALL \`readFile\` simultaneously in one response
+- **Example - Multiple edits**: If you need to fix 5 typos, call ALL 5 \`editText\` in one response, not one per response
+- **Read before write**: Complete all reads first, then batch all writes in the next response
+- **Avoid sequential patterns**: Do NOT make one tool call, wait for result, then make another independent call
+
+**WRONG** (slow, sequential):
+Response 1: \`editText({ find: "typo1", replace: "fix1" })\`
+Response 2: \`editText({ find: "typo2", replace: "fix2" })\`
+Response 3: \`editText({ find: "typo3", replace: "fix3" })\`
+
+**CORRECT** (fast, parallel):
+Response 1: \`editText({ find: "typo1", replace: "fix1" })\` + \`editText({ find: "typo2", replace: "fix2" })\` + \`editText({ find: "typo3", replace: "fix3" })\`
 
 # Task Completion (CRITICAL)
 **You MUST complete ALL tasks before stopping.** Do NOT:

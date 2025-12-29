@@ -28,7 +28,7 @@ const measureTextWidth = (text: string, font: string = '11pt "Arial"'): number =
 };
 
 export default function XlsxEditor({ file, fileName, handle }: XlsxEditorProps) {
-    const { setAIActionHandler, rootItems, openFile, setDocumentStats } = useWorkspace();
+    const { setAIActionHandler, rootItems, openFile, setDocumentStats, libraryItems } = useWorkspace();
 
     // Parse xlsx and manage sheet state
     const { sheets, isReady, error: parseError, workbookRef } = useFortuneSheet(file);
@@ -162,6 +162,7 @@ export default function XlsxEditor({ file, fileName, handle }: XlsxEditorProps) 
         activeFileType: 'xlsx',
         activeFileHandle: handle,
         workspaceFiles: rootItems,
+        libraryItems,
         setAIActionHandler,
         setCellValue: setCellValueViaRef,
         openFileInEditor: openFileByPath
