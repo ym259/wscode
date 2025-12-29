@@ -26,10 +26,7 @@ export default function DocEditor({ file, fileName, handle }: DocEditorProps) {
     }, [fileName, setDocumentStats]);
 
     if (isDocx) {
-        if (process.env.NEXT_PUBLIC_USE_CUSTOM_EDITOR === 'true') {
-            return <CustomDocEditorWrapper file={file} fileName={fileName} handle={handle} />;
-        }
-        return <DocxEditor file={file} fileName={fileName} handle={handle} />;
+        return <CustomDocEditorWrapper file={file} fileName={fileName} handle={handle} />;
     }
 
     if (isPdf) {

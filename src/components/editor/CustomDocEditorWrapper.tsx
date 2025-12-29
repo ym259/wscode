@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useRef, useState, useEffect } from 'react';
+import React, { useRef, useState, useEffect, useCallback } from 'react';
 import dynamic from 'next/dynamic';
 import { useWorkspace } from '@/contexts/WorkspaceContext';
 import { useUniversalAgent } from './hooks/useUniversalAgent';
@@ -29,7 +29,7 @@ interface CustomDocEditorWrapperProps {
 }
 
 export default function CustomDocEditorWrapper({ file, fileName, handle }: CustomDocEditorWrapperProps) {
-    const { setAIActionHandler, setVoiceToolHandler, rootItems, setDocumentStats, libraryItems, openTabs } = useWorkspace();
+    const { setAIActionHandler, setVoiceToolHandler, rootItems, setDocumentStats, libraryItems, openTabs, setAttachedSelection, requestComposerFocus } = useWorkspace();
     const editorRef = useRef<CustomDocEditorHandle>(null);
     const [editorReady, setEditorReady] = useState(false);
     const lastStatsUpdateRef = useRef<number>(0);
@@ -68,6 +68,46 @@ export default function CustomDocEditorWrapper({ file, fileName, handle }: Custo
 
         return () => clearInterval(interval);
     }, [file, editorReady]);
+
+    // Handle Cmd+/ to focus composer with selection as chip
+    const handleKeyDown = useCallback((e: KeyboardEvent) => {
+        // Cmd+/ (Mac) or Ctrl+/ (Windows/Linux) - focus composer, attach selection if available  
+        if ((e.metaKey || e.ctrlKey) && e.key === '/') {
+            e.preventDefault();
+            e.stopPropagation();
+
+            const editor = editorRef.current?.editor;
+            if (editor?.state?.selection) {
+                const { from, to } = editor.state.selection;
+
+                // If there's a selection, attach it as a chip
+                if (from !== to) {
+                    const selectedText = editor.state.doc.textBetween(from, to, ' ');
+                    if (selectedText.trim()) {
+                        setAttachedSelection({
+                            text: selectedText,
+                            fileName: fileName,
+                        });
+                        return; // setAttachedSelection will open panel and focus
+                    }
+                }
+            }
+
+            // No selection - just focus the composer
+            requestComposerFocus();
+        }
+    }, [fileName, setAttachedSelection, requestComposerFocus]);
+
+    // Register keyboard shortcut
+    useEffect(() => {
+        if (!editorReady) return;
+
+        window.addEventListener('keydown', handleKeyDown, true);
+
+        return () => {
+            window.removeEventListener('keydown', handleKeyDown, true);
+        };
+    }, [editorReady, handleKeyDown]);
 
     // Helper for CJK-aware word counting
     const countWords = (text: string): number => {
@@ -151,7 +191,7 @@ export default function CustomDocEditorWrapper({ file, fileName, handle }: Custo
     return (
         <div className={styles.wrapper}>
             <div className={`${styles.container} ${styles.ready}`}>
-                <CustomDocEditor ref={editorRef} file={file} />
+                <CustomDocEditor ref={editorRef} file={file} fileName={fileName} />
             </div>
         </div>
     );

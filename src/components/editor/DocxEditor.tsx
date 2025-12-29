@@ -17,7 +17,7 @@ interface DocxEditorProps {
 }
 
 export default function DocxEditor({ file, fileName, handle }: DocxEditorProps) {
-    const { setAIActionHandler, rootItems, setAttachedSelection, openFile, setDocumentStats, libraryItems, openTabs } = useWorkspace();
+    const { setAIActionHandler, rootItems, setAttachedSelection, requestComposerFocus, openFile, setDocumentStats, libraryItems, openTabs } = useWorkspace();
     const containerRef = useRef<HTMLDivElement>(null);
     const lastStatsUpdateRef = useRef<number>(0);
 
@@ -140,56 +140,45 @@ export default function DocxEditor({ file, fileName, handle }: DocxEditorProps) 
         };
     }, [isReady, superdocInstance, setDocumentStats]);
 
-    // Handle Cmd+E to attach selection to chat
+    // Handle Cmd+/ to focus composer with selection as chip
     const handleKeyDown = useCallback((e: KeyboardEvent) => {
-        // Cmd+E (Mac) or Ctrl+E (Windows/Linux)
-        if ((e.metaKey || e.ctrlKey) && e.key === 'e') {
+        // Cmd+/ (Mac) or Ctrl+/ (Windows/Linux) - focus composer, attach selection if available
+        if ((e.metaKey || e.ctrlKey) && e.key === '/') {
             e.preventDefault();
             e.stopPropagation();
 
-            console.log('[DocxEditor] Cmd+E pressed');
-
-            // Get the editor from SuperDoc (same pattern as useAiAssistant.ts)
             const superdoc = superdocRef.current as any;
             const editor = superdoc?.activeEditor || superdoc?.editor || superdoc?.getEditor?.() || superdoc?._editor;
 
-            if (!editor?.state?.selection) {
-                console.log('[DocxEditor] No editor found');
-                return;
+            if (editor?.state?.selection) {
+                const { from, to } = editor.state.selection;
+
+                // If there's a selection, attach it as a chip
+                if (from !== to) {
+                    const selectedText = editor.state.doc.textBetween(from, to, ' ');
+                    if (selectedText.trim()) {
+                        setAttachedSelection({
+                            text: selectedText,
+                            fileName: fileName,
+                        });
+                        return; // setAttachedSelection will open panel and focus
+                    }
+                }
             }
 
-            const { from, to } = editor.state.selection;
-
-            console.log('[DocxEditor] Selection range:', from, to);
-
-            // Only attach if there's a selection (not just a cursor)
-            if (from === to) {
-                console.log('[DocxEditor] No selection (cursor only)');
-                return;
-            }
-
-            // Get selected text
-            const selectedText = editor.state.doc.textBetween(from, to, ' ');
-            console.log('[DocxEditor] Selected text:', selectedText);
-
-            if (selectedText.trim()) {
-                setAttachedSelection({
-                    text: selectedText,
-                    fileName: fileName,
-                });
-                console.log('[DocxEditor] Selection attached!');
-            }
+            // No selection - just focus the composer
+            requestComposerFocus();
         }
-    }, [superdocRef, fileName, setAttachedSelection]);
+    }, [superdocRef, fileName, setAttachedSelection, requestComposerFocus]);
 
-    // Add keyboard listener with capture phase to intercept before editor
+    // Add keyboard listener
     useEffect(() => {
         if (!isReady) return;
 
-        // Use capture phase to get the event before the editor does
-        document.addEventListener('keydown', handleKeyDown, true);
+        window.addEventListener('keydown', handleKeyDown, true);
+
         return () => {
-            document.removeEventListener('keydown', handleKeyDown, true);
+            window.removeEventListener('keydown', handleKeyDown, true);
         };
     }, [isReady, handleKeyDown]);
 

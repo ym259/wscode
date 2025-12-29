@@ -38,7 +38,7 @@ export function MentionInput({
     onMentionAdd,
     onMentionRemove
 }: MentionInputProps) {
-    const { attachedSelection, clearAttachedSelection } = useWorkspace();
+    const { attachedSelection, clearAttachedSelection, composerFocusRequested } = useWorkspace();
     const editorRef = useRef<HTMLDivElement>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
     const [mentionQuery, setMentionQuery] = useState<string | null>(null);
@@ -77,12 +77,12 @@ export function MentionInput({
             : [];
     }, [allFiles, mentionQuery]);
 
-    // Focus editor when attached selection is added
+    // Focus editor when attached selection is added or when focus is explicitly requested
     useEffect(() => {
-        if (attachedSelection) {
+        if (attachedSelection || composerFocusRequested > 0) {
             editorRef.current?.focus();
         }
-    }, [attachedSelection]);
+    }, [attachedSelection, composerFocusRequested]);
 
     // Extract plain text from contenteditable for the value prop
     const getPlainText = useCallback((): string => {

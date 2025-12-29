@@ -1,27 +1,52 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
-import { MessageSquarePlus } from 'lucide-react';
+import { MessageSquarePlus, Sparkles } from 'lucide-react';
 
 interface SelectionPopoverProps {
     visible: boolean;
     x: number;
     y: number;
     onAddComment: () => void;
+    onAiAttach?: () => void;
     onClose: () => void;
 }
 
 /**
  * Popover that appears when text is selected in the editor.
- * Shows options like adding a comment.
+ * Shows options like adding a comment or attaching to AI chat.
  */
 export const SelectionPopover: React.FC<SelectionPopoverProps> = ({
     visible,
     x,
     y,
     onAddComment,
+    onAiAttach,
 }) => {
     if (!visible) return null;
+
+    const buttonStyle: React.CSSProperties = {
+        display: 'flex',
+        alignItems: 'center',
+        gap: '6px',
+        padding: '6px 10px',
+        backgroundColor: 'transparent',
+        border: 'none',
+        borderRadius: '4px',
+        cursor: 'pointer',
+        fontSize: '13px',
+        color: '#323130',
+        transition: 'background-color 0.15s',
+        whiteSpace: 'nowrap',
+    };
+
+    const handleMouseEnter = (e: React.MouseEvent<HTMLButtonElement>) => {
+        e.currentTarget.style.backgroundColor = '#f3f2f1';
+    };
+
+    const handleMouseLeave = (e: React.MouseEvent<HTMLButtonElement>) => {
+        e.currentTarget.style.backgroundColor = 'transparent';
+    };
 
     return (
         <div
@@ -46,30 +71,29 @@ export const SelectionPopover: React.FC<SelectionPopoverProps> = ({
                 onClick={() => {
                     onAddComment();
                 }}
-                style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '6px',
-                    padding: '6px 10px',
-                    backgroundColor: 'transparent',
-                    border: 'none',
-                    borderRadius: '4px',
-                    cursor: 'pointer',
-                    fontSize: '13px',
-                    color: '#323130',
-                    transition: 'background-color 0.15s',
-                }}
-                onMouseEnter={(e) => {
-                    e.currentTarget.style.backgroundColor = '#f3f2f1';
-                }}
-                onMouseLeave={(e) => {
-                    e.currentTarget.style.backgroundColor = 'transparent';
-                }}
+                style={buttonStyle}
+                onMouseEnter={handleMouseEnter}
+                onMouseLeave={handleMouseLeave}
                 title="Add comment"
             >
                 <MessageSquarePlus size={16} />
-                Comment
+                コメント
             </button>
+            {onAiAttach && (
+                <button
+                    onClick={() => {
+                        onAiAttach();
+                    }}
+                    style={buttonStyle}
+                    onMouseEnter={handleMouseEnter}
+                    onMouseLeave={handleMouseLeave}
+                    title="Attach selection to AI chat (⌘/)"
+                >
+                    <Sparkles size={16} />
+                    <span>AI添付</span>
+                    <span style={{ color: '#a19f9d', fontSize: '11px' }}>⌘/</span>
+                </button>
+            )}
         </div>
     );
 };
@@ -149,7 +173,7 @@ export const CommentInputPopover: React.FC<CommentInputPopoverProps> = ({
                 color: '#323130',
                 marginBottom: '8px',
             }}>
-                Add Comment
+                コメントを追加
             </div>
             <textarea
                 ref={inputRef}
@@ -196,7 +220,7 @@ export const CommentInputPopover: React.FC<CommentInputPopoverProps> = ({
                         color: '#605e5c',
                     }}
                 >
-                    Cancel
+                    キャンセル
                 </button>
                 <button
                     onClick={handleSubmit}
@@ -212,7 +236,7 @@ export const CommentInputPopover: React.FC<CommentInputPopoverProps> = ({
                         fontWeight: 500,
                     }}
                 >
-                    Add
+                    追加
                 </button>
             </div>
         </div>

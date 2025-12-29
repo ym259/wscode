@@ -4,6 +4,7 @@
 import React, { useState, forwardRef } from 'react';
 import JSZip from 'jszip';
 
+import { useWorkspace } from '@/contexts/WorkspaceContext';
 import { EditorToolbar } from '../toolbar/EditorToolbar';
 import { CommentsSidebar } from '../sidebar/CommentsSidebar';
 import { TrackChangePopup } from '../popups/TrackChangePopup';
@@ -21,7 +22,8 @@ import { Ruler } from './Ruler';
 
 export type { CustomDocEditorHandle, TrackChangesDisplayMode };
 
-export const CustomDocEditor = forwardRef<CustomDocEditorHandle, CustomDocEditorProps>(({ file }, ref) => {
+export const CustomDocEditor = forwardRef<CustomDocEditorHandle, CustomDocEditorProps>(({ file, fileName }, ref) => {
+    const { setAttachedSelection, requestComposerFocus } = useWorkspace();
     const [comments, setComments] = useState<Comment[]>([]);
     const [showRuler, setShowRuler] = useState(true);
     const [docAttrs, setDocAttrs] = useState<any>(null);
@@ -116,6 +118,30 @@ export const CustomDocEditor = forwardRef<CustomDocEditorHandle, CustomDocEditor
         });
     };
 
+    // AI Attach Handler
+    const handleAiAttach = () => {
+        if (!editor || !fileName) return;
+
+        const { state } = editor;
+        const { selection } = state;
+        const { from, to } = selection;
+
+        if (from !== to) {
+            const selectedText = state.doc.textBetween(from, to, ' ');
+            if (selectedText.trim()) {
+                setAttachedSelection({
+                    text: selectedText,
+                    fileName: fileName,
+                });
+                // Close selection popover
+                setSelectionPopover({ visible: false, x: 0, y: 0 });
+            }
+        } else {
+            // No selection - just focus composer
+            requestComposerFocus();
+        }
+    };
+
     return (
         <div style={{
             display: 'flex',
@@ -199,6 +225,7 @@ export const CustomDocEditor = forwardRef<CustomDocEditorHandle, CustomDocEditor
                 x={selectionPopover.x}
                 y={selectionPopover.y}
                 onAddComment={handleShowCommentInput}
+                onAiAttach={handleAiAttach}
                 onClose={() => setSelectionPopover({ visible: false, x: 0, y: 0 })}
             />
 

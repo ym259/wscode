@@ -20,6 +20,7 @@ export interface CustomDocEditorHandle {
 
 export interface CustomDocEditorProps {
     file?: File;
+    fileName?: string;
 }
 
 export interface Comment {

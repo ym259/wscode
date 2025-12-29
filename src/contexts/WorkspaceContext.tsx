@@ -47,6 +47,9 @@ interface WorkspaceContextType extends WorkspaceState {
     attachedSelection: AttachedSelection | null;
     setAttachedSelection: (selection: AttachedSelection | null) => void;
     clearAttachedSelection: () => void;
+    // Composer focus request (Cmd+L)
+    composerFocusRequested: number;
+    requestComposerFocus: () => void;
     // Outline Support
     activeOutline: OutlineItem[];
     setActiveOutline: (outline: OutlineItem[]) => void;
@@ -91,6 +94,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     const [documentStats, setDocumentStats] = useState<DocumentStats | null>(null);
     const [libraryItems, setLibraryItems] = useState<FileSystemItem[]>([]);
     const [agentInputOverride, setAgentInputOverride] = useState<string | null>(null);
+    const [composerFocusRequested, setComposerFocusRequested] = useState(0);
 
     // Load workspace state from IDB on mount
     useEffect(() => {
@@ -330,6 +334,11 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         setAttachedSelectionState(null);
     }, []);
 
+    const requestComposerFocus = useCallback(() => {
+        setIsPanelOpen(true);
+        setComposerFocusRequested(prev => prev + 1);
+    }, []);
+
     return (
         <WorkspaceContext.Provider
             value={{
@@ -354,6 +363,8 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
                 attachedSelection,
                 setAttachedSelection,
                 clearAttachedSelection,
+                composerFocusRequested,
+                requestComposerFocus,
                 activeOutline,
                 setActiveOutline,
                 navRequest,
