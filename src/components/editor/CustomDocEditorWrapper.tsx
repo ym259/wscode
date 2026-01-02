@@ -114,11 +114,11 @@ export default function CustomDocEditorWrapper({ file, fileName, handle }: Custo
         if (!text) return 0;
 
         // Try to use Intl.Segmenter if available (modern browsers)
-        if (typeof Intl !== 'undefined' && (Intl as any).Segmenter) {
+        if (typeof Intl !== 'undefined' && 'Segmenter' in Intl) {
             try {
-                const segmenter = new (Intl as any).Segmenter('ja', { granularity: 'word' });
+                const SegmenterClass = Intl.Segmenter as typeof Intl.Segmenter;
+                const segmenter = new SegmenterClass('ja', { granularity: 'word' });
                 let count = 0;
-                // eslint-disable-next-line @typescript-eslint/no-unused-vars
                 for (const segment of segmenter.segment(text)) {
                     if (segment.isWordLike) {
                         count++;

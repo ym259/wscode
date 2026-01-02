@@ -67,6 +67,8 @@ export const PagedEditorContent: React.FC<PagedEditorContentProps> = ({
     const [pages, setPages] = useState<PageInfo[]>([{ pageNumber: 1, contentOffset: 0, visibleHeight: 0 }]);
     const editorContainerRef = useRef<HTMLDivElement>(null);
     const [clonedContent, setClonedContent] = useState<string>('');
+    // Ref to hold the latest calculatePages function for recursive setTimeout calls
+    const calculatePagesRef = useRef<(() => void) | null>(null);
 
     // Calculate page dimensions from docAttrs
     const pageWidthTwips = parseInt(docAttrs?.pageSize?.['w:w']) || 12240;
@@ -135,10 +137,6 @@ export const PagedEditorContent: React.FC<PagedEditorContentProps> = ({
         return lines;
     };
 
-    // Tolerance for line-height leading/padding (5px).
-    // If a line overshoots by less than this, we keep it on the current page.
-    const LINE_HEIGHT_TOLERANCE = 3;
-
     // Calculate page breaks: find where each page should start based on LINE boundaries
     const calculatePages = useCallback(() => {
         if (!editorContainerRef.current) return;
@@ -156,7 +154,7 @@ export const PagedEditorContent: React.FC<PagedEditorContentProps> = ({
         // Wait for content to actually render (has height)
         if (proseMirror.clientHeight < 10) {
             console.warn('[PagedEditorContent] ProseMirror has no height yet, retrying...');
-            setTimeout(calculatePages, 200);
+            setTimeout(() => calculatePagesRef.current?.(), 200);
             return;
         }
 
@@ -166,7 +164,7 @@ export const PagedEditorContent: React.FC<PagedEditorContentProps> = ({
         if (blocks.length === 0) {
             console.warn('[PagedEditorContent] No blocks found, defaulting to 1 page, retrying...');
             // Likely not rendered yet, retry soon
-            setTimeout(calculatePages, 200);
+            setTimeout(() => calculatePagesRef.current?.(), 200);
             return;
         }
 
@@ -226,6 +224,11 @@ export const PagedEditorContent: React.FC<PagedEditorContentProps> = ({
             });
         }
     }, [contentAreaHeight, isPaged, onLayoutStatsChange]);
+
+    // Keep ref in sync with the latest calculatePages function
+    React.useEffect(() => {
+        calculatePagesRef.current = calculatePages;
+    }, [calculatePages]);
 
     React.useLayoutEffect(() => {
         if (!isPaged) return;

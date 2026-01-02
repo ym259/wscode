@@ -63,7 +63,7 @@ describe('Library Tools', () => {
     });
 
     it('should handle missing library items gracefully', async () => {
-        mockContext.libraryItems = undefined as any;
+        mockContext.libraryItems = undefined as unknown as FileSystemItem[];
         // Re-get tools to bind new context (though context is usually ref)
         // But getLibraryTools reads from context immediately in my implementation?
         // Let's check implementation. Ah, it does `const { libraryItems } = context;`

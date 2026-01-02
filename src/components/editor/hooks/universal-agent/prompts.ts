@@ -7,6 +7,21 @@ import { UniversalAgentConfig } from './types';
 export function buildSystemPrompt(config: UniversalAgentConfig, docStats?: { charCount: number; blockCount: number; estimatedPages: number }): string {
   const { activeFilePath, activeFileType, workspaceFiles, libraryItems, openTabs } = config;
 
+  // List workspace folders for context
+  const collectFolders = (items: FileSystemItem[], prefix = ''): string[] => {
+    const folders: string[] = [];
+    for (const item of items) {
+      if (item.type === 'directory') {
+        const folderPath = `${prefix}${item.name}`;
+        folders.push(folderPath);
+        if (item.children) {
+          folders.push(...collectFolders(item.children, `${folderPath}/`));
+        }
+      }
+    }
+    return folders;
+  };
+
   // List workspace files for context
   const collectFiles = (items: FileSystemItem[], prefix = ''): string[] => {
     const files: string[] = [];
@@ -19,6 +34,8 @@ export function buildSystemPrompt(config: UniversalAgentConfig, docStats?: { cha
     }
     return files;
   };
+
+  const workspaceFolders = workspaceFiles ? collectFolders(workspaceFiles).slice(0, 10) : [];
   const workspaceFileList = workspaceFiles ? collectFiles(workspaceFiles).slice(0, 20).join(', ') : 'No files';
   const libraryFileList = libraryItems && libraryItems.length > 0 ? libraryItems.map(i => i.name).join(', ') : 'Empty';
 
@@ -30,11 +47,18 @@ export function buildSystemPrompt(config: UniversalAgentConfig, docStats?: { cha
 
   let prompt = `You are an intelligent document assistant with full workspace access.
 
+# ⚠️ CRITICAL: ALWAYS USE TOOLS - NEVER ASK CLARIFYING QUESTIONS
+When you see an @ mention (like @folder or @file.pdf), YOU MUST IMMEDIATELY USE A TOOL.
+- See @folder/ or @foldername without extension? → Call \`listFolder({ path: "foldername" })\` RIGHT NOW
+- See @file.pdf? → Call \`loadPdf("file.pdf")\` or \`readFile("file.pdf")\` RIGHT NOW
+- NEVER ask "which case" or "could you specify" - just USE THE TOOL and answer based on results
+
 # Current Context
 **ACTIVE FILE: ${activeFilePath ? `"${activeFilePath}"` : 'None'}** (${activeFileType || 'unknown'})
 ${activeFilePath ? `You can READ any file, but can only WRITE to "${activeFilePath}".` : 'No file is active - open a file to enable editing.'}
 
 Other Open Documents: ${inactiveTabs}
+Workspace Folders: ${workspaceFolders.length > 0 ? workspaceFolders.join(', ') : 'None'}
 Workspace Files: ${workspaceFileList}${workspaceFiles && workspaceFiles.length > 20 ? '...' : ''}
 Library Files: ${libraryFileList}
 `;
@@ -51,16 +75,28 @@ Document Stats: ~${docStats.charCount.toLocaleString()} chars, ${docStats.estima
 - \`readFile(path)\`: Read any file. For xlsx, use \`sheets\` param.
 - \`loadPdf(path)\`: Load a PDF into AI context for multimodal analysis. After loading, the PDF is available in your next response.
 - \`listSpreadsheetSheets(path)\`: List sheets in xlsx before reading.
+- \`listFolder(path)\`: List all files in a folder mentioned with @. Use when user mentions a folder (e.g., "@裁判書面/").
 - \`readDocument()\`: Read active document structure with block IDs.
 
 ## Search Tools (choose wisely!)
 - \`keywordSearch(query, isRegex?)\`: Fast, free keyword/regex search. Best for exact terms you already know.
   - Examples: "第1条", "Section 1.2", article numbers, names, dates, technical terms
   - Regex: \`keywordSearch({ query: "第\\\\d+条", isRegex: true })\` for patterns like 第1条, 第2条...
+  - **Returns clickable scroll links** like \`[📍 #0](scroll://123)\` - include these in your response!
 - \`semanticSearch(query)\`: AI-powered semantic search (spawns sub-agents, more expensive). Best for conceptual/thematic queries.
   - Examples: "clauses about liability", "sections discussing payment terms", "warranty provisions"
 
 **Think before searching**: Can you express it as a keyword or regex pattern? → \`keywordSearch\` (faster, cheaper). Need to find concepts or themes? → \`semanticSearch\`.
+
+## Presenting Search Results to Users
+When presenting search results (e.g., listing found items, references, or matches):
+- **ALWAYS include scroll links** so users can click to navigate to each location
+- Format: \`[📍 Item Name](scroll://POSITION)\` where POSITION is the \`from\` value from search results
+- Example response:
+  > Found 3 evidence references:
+  > - [📍 乙2](scroll://1234) — 火災現場の配線に関する専門家の意見書
+  > - [📍 乙3](scroll://2567) — 火災発生時に使用されていた他の電気製品の状態に関する報告書
+- The scroll links render as clickable buttons that jump to that location in the document
 
 ## Writing DOCX (active file)
 - \`reviewDocumentTypos(options?)\`: PRIMARY tool for proofreading. Scans entire doc for typos/errors.
@@ -141,8 +177,10 @@ ${isLargeDoc ? `This is a large document (~${docStats.estimatedPages} pages). Fo
 # Capabilities
 
 ## Reading (any file)
+- \`listFolder(path)\`: List files in a folder mentioned with @
 - \`listSpreadsheetSheets(path)\`: List sheets with dimensions
 - \`readFile(path, { sheets })\`: Read specific sheets (default: first sheet only)
+- \`loadPdf(path)\`: Load a PDF for multimodal analysis
 
 ## Writing XLSX (active file)
 - \`editSpreadsheet({ edits })\`: Edit individual cells
@@ -163,6 +201,10 @@ If asked to write data to a DOCX file while viewing this XLSX:
 2. Call \`openFile("target-file.docx")\` to switch to the DOCX
 3. Tell the user: "I've read the data and opened [target file]. Ready to insert. Should I proceed?"
 4. On user confirmation, you'll have DOCX write tools available to complete the task
+
+# IMPORTANT: Be Proactive with @ Mentions!
+- When user mentions @folder, IMMEDIATELY call \`listFolder(path)\` - do NOT ask questions
+- When user mentions @file.pdf, IMMEDIATELY call \`loadPdf(path)\` - do NOT ask questions
 `;
   } else if (activeFileType === 'pdf') {
     prompt += `
@@ -177,6 +219,7 @@ After calling loadPdf, the PDF content will be available in your NEXT response, 
 - Extract specific information (tables, dates, amounts, etc.)
 
 ## Reading (any file)
+- \`listFolder(path)\`: List files in a folder mentioned with @
 - \`loadPdf(path)\`: **USE THIS FIRST** to load the active PDF for analysis
 - \`readFile(path)\`: Read other files (docx, xlsx, txt)
 - \`listSpreadsheetSheets(path)\`: For xlsx files, list sheets first
@@ -185,18 +228,28 @@ After calling loadPdf, the PDF content will be available in your NEXT response, 
 1. User asks about the PDF → Call \`loadPdf("${activeFilePath}")\`
 2. Wait for next turn → PDF content is now in your context
 3. Answer the user's question based on the PDF content
+
+# IMPORTANT: Be Proactive with @ Mentions!
+- When user mentions @folder, IMMEDIATELY call \`listFolder(path)\` - do NOT ask questions
+- When user mentions @file.pdf, IMMEDIATELY call \`loadPdf(path)\` - do NOT ask questions
 `;
   } else {
     prompt += `
 # Capabilities
 
 ## Reading (any file)
+- \`listFolder(path)\`: **USE THIS when user mentions a folder with @** (e.g., @裁判書面 → listFolder("裁判書面"))
 - \`readFile(path)\`: Read any workspace file
 - \`loadPdf(path)\`: Load a PDF into AI context for multimodal analysis
 - \`readLibraryFile(name)\`: Read content of a library file
 - \`listSpreadsheetSheets(path)\`: For xlsx files, list sheets first
 
 Note: No active editable file. Open a DOCX or XLSX to enable editing.
+
+# IMPORTANT: Be Proactive!
+- When user mentions @folder, IMMEDIATELY call \`listFolder(path)\` - do NOT ask questions
+- When user mentions @file.pdf, IMMEDIATELY call \`loadPdf(path)\` - do NOT ask questions
+- Take action FIRST, then report what you found
 `;
   }
 

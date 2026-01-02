@@ -3,7 +3,7 @@
 import React, { useState, useCallback, useMemo } from 'react';
 import { useWorkspace } from '@/contexts/WorkspaceContext';
 import styles from './OutlineView.module.css';
-import { ChevronDown, ChevronRight, FileText } from 'lucide-react';
+import { ChevronDown, ChevronRight } from 'lucide-react';
 
 interface OutlineItem {
     id: string;

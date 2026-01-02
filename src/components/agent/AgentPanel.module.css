@@ -360,8 +360,9 @@
 
 .mentionItem {
     display: flex;
-    flex-direction: column;
-    gap: 2px;
+    flex-direction: row;
+    align-items: center;
+    gap: 4px;
     padding: var(--spacing-sm) var(--spacing-md);
     cursor: pointer;
     transition: background var(--transition-fast);
@@ -372,16 +373,34 @@
     background: var(--bg-selected);
 }
 
+.mentionItemIcon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    color: var(--text-secondary);
+    margin-right: 8px;
+}
+
+.mentionItemIcon svg {
+    opacity: 0.7;
+}
+
 .mentionFileName {
     font-size: var(--font-size-sm);
     font-weight: 500;
     color: var(--text-primary);
+    flex-shrink: 0;
 }
 
 .mentionFilePath {
     font-size: var(--font-size-xs);
     color: var(--text-secondary);
     font-family: monospace;
+    margin-left: 8px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 /* File mention chips in messages */
@@ -404,6 +423,18 @@
 .fileMention:hover {
     background: linear-gradient(135deg, rgba(59, 130, 246, 0.25), rgba(147, 51, 234, 0.25));
     border-color: rgba(59, 130, 246, 0.5);
+}
+
+/* Folder mention - amber/orange color to differentiate from files */
+.folderMention {
+    background: linear-gradient(135deg, rgba(245, 158, 11, 0.15), rgba(234, 88, 12, 0.15));
+    border-color: rgba(245, 158, 11, 0.3);
+    color: #fbbf24;
+}
+
+.folderMention:hover {
+    background: linear-gradient(135deg, rgba(245, 158, 11, 0.25), rgba(234, 88, 12, 0.25));
+    border-color: rgba(245, 158, 11, 0.5);
 }
 
 .fileMentionIcon {
@@ -1105,6 +1136,38 @@
 .mdLink:hover {
     color: #93c5fd;
     border-bottom-color: rgba(147, 197, 253, 0.6);
+}
+
+/* Scroll Link Styles - for AI search result navigation */
+.scrollLink {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 8px;
+    margin: 0 2px;
+    font-size: 12px;
+    font-weight: 500;
+    color: #10b981;
+    background: rgba(16, 185, 129, 0.1);
+    border: 1px solid rgba(16, 185, 129, 0.3);
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    font-family: inherit;
+}
+
+.scrollLink:hover {
+    background: rgba(16, 185, 129, 0.2);
+    border-color: rgba(16, 185, 129, 0.5);
+    color: #34d399;
+}
+
+.scrollLink:active {
+    transform: scale(0.98);
+}
+
+.scrollLinkIcon {
+    flex-shrink: 0;
 }
 
 /* Blockquote Styles */

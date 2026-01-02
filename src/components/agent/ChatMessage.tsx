@@ -3,7 +3,7 @@
 /* eslint-disable @next/next/no-img-element */
 import React from 'react';
 import { User, Bot } from 'lucide-react';
-import { ChatMessage as ChatMessageType, MessageItem } from '@/types';
+import { ChatMessage as ChatMessageType } from '@/types';
 import { ToolCallItem } from './ToolCallItem';
 import { ReasoningItem } from './ReasoningItem';
 import { SearchResultsNavigation } from './SearchResultsNavigation';
@@ -142,12 +142,10 @@ export function ChatMessage({
     );
 }
 
-interface LoadingMessageProps { }
-
 /**
  * Loading indicator message shown while waiting for AI response
  */
-export function LoadingMessage({ }: LoadingMessageProps) {
+export function LoadingMessage() {
     return (
         <div className={`${styles.message} ${styles.assistant}`}>
             <div className={styles.messageIcon}>

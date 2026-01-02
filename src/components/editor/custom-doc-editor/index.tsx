@@ -1,7 +1,7 @@
 'use client';
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
-import React, { useState, forwardRef } from 'react';
+import React, { useState, forwardRef, useEffect } from 'react';
 import JSZip from 'jszip';
 
 import { useWorkspace } from '@/contexts/WorkspaceContext';
@@ -23,7 +23,7 @@ import { Ruler } from './Ruler';
 export type { CustomDocEditorHandle, TrackChangesDisplayMode };
 
 export const CustomDocEditor = forwardRef<CustomDocEditorHandle, CustomDocEditorProps>(({ file, fileName }, ref) => {
-    const { setAttachedSelection, requestComposerFocus } = useWorkspace();
+    const { setAttachedSelection, requestComposerFocus, scrollToPositionRequest, setScrollToPositionRequest } = useWorkspace();
     const [comments, setComments] = useState<Comment[]>([]);
     const [showRuler, setShowRuler] = useState(true);
     const [docAttrs, setDocAttrs] = useState<any>(null);
@@ -73,6 +73,93 @@ export const CustomDocEditor = forwardRef<CustomDocEditorHandle, CustomDocEditor
 
     // 6. Handle Outline & Navigation
     useOutline({ editor });
+
+    // 7. Handle Scroll to Position Requests (from AI search results)
+    useEffect(() => {
+        if (!editor || scrollToPositionRequest === null) return;
+
+        const docSize = editor.state.doc.content.size;
+        const safePos = Math.max(0, Math.min(scrollToPositionRequest, docSize - 1));
+        
+        // Find the DOM node at this position first
+        let targetElement: HTMLElement | null = null;
+        try {
+            const domAtPos = editor.view.domAtPos(safePos);
+            if (domAtPos && domAtPos.node) {
+                // Get the element (text nodes don't have classList)
+                if (domAtPos.node.nodeType === Node.TEXT_NODE) {
+                    targetElement = domAtPos.node.parentElement;
+                } else {
+                    targetElement = domAtPos.node as HTMLElement;
+                }
+                
+                // Find the closest block-level parent for better highlighting
+                const blockTags = ['P', 'DIV', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'LI', 'BLOCKQUOTE', 'TABLE', 'TR'];
+                while (targetElement && !blockTags.includes(targetElement.tagName)) {
+                    targetElement = targetElement.parentElement;
+                }
+            }
+        } catch (e) {
+            console.warn('[ScrollToPosition] Failed to find DOM element:', e);
+        }
+
+        // Set text selection
+        editor.chain()
+            .focus()
+            .setTextSelection(safePos)
+            .run();
+
+        // Scroll the target element to center with highlight
+        if (targetElement) {
+            // Use requestAnimationFrame to ensure DOM is ready
+            requestAnimationFrame(() => {
+                // Scroll to center
+                targetElement!.scrollIntoView({
+                    behavior: 'smooth',
+                    block: 'center'
+                });
+
+                // Apply highlight using inline styles (more reliable than CSS class)
+                const originalBackground = targetElement!.style.backgroundColor;
+                const originalOutline = targetElement!.style.outline;
+                const originalTransition = targetElement!.style.transition;
+                const originalBorderRadius = targetElement!.style.borderRadius;
+                
+                // Set highlight styles
+                targetElement!.style.transition = 'background-color 0.3s ease, outline 0.3s ease';
+                targetElement!.style.backgroundColor = 'rgba(250, 204, 21, 0.5)';
+                targetElement!.style.outline = '3px solid rgba(250, 204, 21, 0.8)';
+                targetElement!.style.borderRadius = '4px';
+                
+                // Fade out after 2 seconds
+                setTimeout(() => {
+                    if (targetElement) {
+                        targetElement.style.backgroundColor = 'rgba(250, 204, 21, 0.2)';
+                        targetElement.style.outline = '2px solid rgba(250, 204, 21, 0.4)';
+                    }
+                }, 2000);
+                
+                // Remove highlight after 3 seconds
+                setTimeout(() => {
+                    if (targetElement) {
+                        targetElement.style.backgroundColor = originalBackground;
+                        targetElement.style.outline = originalOutline;
+                        targetElement.style.transition = originalTransition;
+                        targetElement.style.borderRadius = originalBorderRadius;
+                    }
+                }, 3000);
+            });
+        } else {
+            // Fallback: just use editor's scrollIntoView
+            editor.chain()
+                .setTextSelection(safePos)
+                .scrollIntoView()
+                .run();
+        }
+
+        // Clear the request
+        setScrollToPositionRequest(null);
+    }, [editor, scrollToPositionRequest, setScrollToPositionRequest]);
 
     // Image upload handler
     const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {

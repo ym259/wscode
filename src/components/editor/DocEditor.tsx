@@ -2,7 +2,6 @@
 
 import React from 'react';
 import { useWorkspace } from '@/contexts/WorkspaceContext';
-import DocxEditor from './DocxEditor';
 import PdfViewer from './PdfViewer';
 import XlsxEditor from './XlsxEditor';
 import CustomDocEditorWrapper from './CustomDocEditorWrapper';

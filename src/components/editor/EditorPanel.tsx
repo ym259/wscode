@@ -4,6 +4,7 @@ import React from 'react';
 import dynamic from 'next/dynamic';
 import { FileText } from 'lucide-react';
 import { useWorkspace } from '@/contexts/WorkspaceContext';
+import { useUniversalAgent } from './hooks/useUniversalAgent';
 import TabBar from './TabBar';
 import styles from './EditorPanel.module.css';
 
@@ -24,9 +25,22 @@ const MarkdownEditor = dynamic(() => import('./MarkdownEditor'), {
 });
 
 export default function EditorPanel() {
-    const { openTabs, activeTabId, libraryItems } = useWorkspace();
+    const { openTabs, activeTabId, libraryItems, rootItems, setAIActionHandler, setVoiceToolHandler } = useWorkspace();
 
     const activeTab = openTabs.find((tab) => tab.id === activeTabId);
+    
+    // Always initialize universal agent for workspace-level operations (like listFolder)
+    // This ensures the agent has tools even when no document is open
+    useUniversalAgent({
+        isReady: true,  // Always ready for workspace operations
+        workspaceFiles: rootItems,
+        libraryItems,
+        openTabs,
+        setAIActionHandler,
+        setVoiceToolHandler,
+        // activeFilePath/activeFileType will be undefined when no file is open
+        // Individual editors will override with their specific config when mounted
+    });
 
     return (
         <div className={styles.panel}>

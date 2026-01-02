@@ -1,11 +1,12 @@
 'use client';
 
-import React, { useMemo } from 'react';
+import React from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
-import { FileText, Quote, Copy, Check } from 'lucide-react';
+import { FileText, Folder, Quote, Copy, Check } from 'lucide-react';
+import { useWorkspace } from '@/contexts/WorkspaceContext';
 import styles from './AgentPanel.module.css';
 
 /**
@@ -108,14 +109,21 @@ function parseContent(content: string): Array<{ type: 'text' | 'file' | 'selecti
 }
 
 /**
- * Render a file mention chip
+ * Render a file or folder mention chip
  */
 function FileMention({ path }: { path: string }) {
-    const fileName = path.split('/').pop() || path;
+    // Detect if this is a folder (ends with / or has no file extension)
+    const isFolder = path.endsWith('/') || !path.split('/').pop()?.includes('.');
+    const displayName = path.replace(/\/$/, '').split('/').pop() || path;
+    
     return (
-        <span className={styles.fileMention}>
-            <FileText size={12} className={styles.fileMentionIcon} />
-            <span className={styles.fileMentionName}>{fileName}</span>
+        <span className={`${styles.fileMention} ${isFolder ? styles.folderMention : ''}`}>
+            {isFolder ? (
+                <Folder size={12} className={styles.fileMentionIcon} />
+            ) : (
+                <FileText size={12} className={styles.fileMentionIcon} />
+            )}
+            <span className={styles.fileMentionName}>{displayName}{isFolder ? '/' : ''}</span>
         </span>
     );
 }
@@ -136,26 +144,86 @@ function SelectionMention({ fileName, text }: { fileName: string; text: string }
 }
 
 /**
- * Markdown renderer with custom components
+ * Scroll link component for navigating to document positions
+ */
+function ScrollLink({ position, children }: { position: number; children: React.ReactNode }) {
+    const { setScrollToPositionRequest } = useWorkspace();
+
+    const handleClick = (e: React.MouseEvent) => {
+        e.preventDefault();
+        e.stopPropagation();
+        setScrollToPositionRequest(position);
+    };
+
+    return (
+        <button
+            type="button"
+            onClick={handleClick}
+            className={styles.scrollLink}
+            title={`文書内の該当箇所へ移動`}
+        >
+            {/* <MapPin size={12} className={styles.scrollLinkIcon} /> */}
+            {children}
+        </button>
+    );
+}
+
+/**
+ * Custom link component that handles both scroll links and regular links
+ */
+function MarkdownLink({ href, children }: { href?: string; children?: React.ReactNode }) {
+    // Check if this is a scroll link (scroll://position)
+    if (href?.startsWith('scroll://')) {
+        const position = parseInt(href.replace('scroll://', ''), 10);
+        if (!isNaN(position)) {
+            return <ScrollLink position={position}>{children}</ScrollLink>;
+        }
+    }
+    
+    // Regular external link
+    return (
+        <a 
+            href={href} 
+            target="_blank" 
+            rel="noopener noreferrer"
+            className={styles.mdLink}
+        >
+            {children}
+        </a>
+    );
+}
+
+/**
+ * Custom URL transform that preserves scroll:// protocol
+ * ReactMarkdown sanitizes URLs by default and removes unknown protocols
+ */
+function urlTransform(url: string): string {
+    // Preserve scroll:// protocol for internal navigation
+    if (url.startsWith('scroll://')) {
+        return url;
+    }
+    // For other URLs, use default safe protocols
+    const safeProtocols = ['http://', 'https://', 'mailto:', 'tel:'];
+    if (safeProtocols.some(protocol => url.startsWith(protocol)) || url.startsWith('/') || url.startsWith('#')) {
+        return url;
+    }
+    // Block potentially unsafe protocols
+    return '';
+}
+
+/**
+ * Markdown renderer with scroll link support via custom link component
  */
 function MarkdownContent({ content }: { content: string }) {
     return (
         <ReactMarkdown
             remarkPlugins={[remarkGfm]}
+            urlTransform={urlTransform}
             components={{
                 // Custom code block handling
                 code: CodeBlock as React.ComponentType<React.JSX.IntrinsicElements['code']>,
-                // Custom link styling
-                a: ({ href, children }) => (
-                    <a 
-                        href={href} 
-                        target="_blank" 
-                        rel="noopener noreferrer"
-                        className={styles.mdLink}
-                    >
-                        {children}
-                    </a>
-                ),
+                // Custom link that handles scroll:// protocol
+                a: MarkdownLink,
                 // Custom blockquote
                 blockquote: ({ children }) => (
                     <blockquote className={styles.mdBlockquote}>
@@ -194,11 +262,19 @@ function MarkdownContent({ content }: { content: string }) {
     );
 }
 
+
 /**
  * Renders message content with markdown formatting and colored @mentions for file paths and selections
  */
 export function renderMessageContent(content: string): React.ReactNode {
-    const segments = useMemo(() => parseContent(content), [content]);
+    return <MessageContentRenderer content={content} />;
+}
+
+/**
+ * Inner component to properly use React hooks
+ */
+function MessageContentRenderer({ content }: { content: string }): React.ReactNode {
+    const segments = React.useMemo(() => parseContent(content), [content]);
 
     // If no special mentions, render as pure markdown
     if (segments.length === 1 && segments[0].type === 'text') {

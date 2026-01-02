@@ -146,6 +146,17 @@ export const useEditorHandle = (
                         .run();
                 }
             },
+            scrollToPosition: (position: number) => {
+                if (!editor) return;
+                const docSize = editor.state.doc.content.size;
+                // Clamp position to valid range
+                const safePos = Math.max(0, Math.min(position, docSize - 1));
+                editor.chain()
+                    .setTextSelection(safePos)
+                    .scrollIntoView()
+                    .focus()
+                    .run();
+            },
             getDocAttrs: () => docAttrs,
             setPageLayout: (updates: {
                 pageSize?: { width?: number; height?: number };

@@ -55,6 +55,9 @@ interface WorkspaceContextType extends WorkspaceState {
     setActiveOutline: (outline: OutlineItem[]) => void;
     navRequest: string | null;
     setNavRequest: (id: string | null) => void;
+    // Scroll to position (for AI search result links)
+    scrollToPositionRequest: number | null;
+    setScrollToPositionRequest: (position: number | null) => void;
     // Overwrite Save toggle
     isOverwriteEnabled: boolean;
     setIsOverwriteEnabled: (enabled: boolean) => void;
@@ -90,6 +93,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     const [attachedSelection, setAttachedSelectionState] = useState<AttachedSelection | null>(null);
     const [activeOutline, setActiveOutline] = useState<OutlineItem[]>([]);
     const [navRequest, setNavRequest] = useState<string | null>(null);
+    const [scrollToPositionRequest, setScrollToPositionRequest] = useState<number | null>(null);
     const [isOverwriteEnabled, setIsOverwriteEnabled] = useState(false);
     const [documentStats, setDocumentStats] = useState<DocumentStats | null>(null);
     const [libraryItems, setLibraryItems] = useState<FileSystemItem[]>([]);
@@ -369,6 +373,8 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
                 setActiveOutline,
                 navRequest,
                 setNavRequest,
+                scrollToPositionRequest,
+                setScrollToPositionRequest,
                 isOverwriteEnabled,
                 setIsOverwriteEnabled: (enabled: boolean) => {
                     setIsOverwriteEnabled(enabled);

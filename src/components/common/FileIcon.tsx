@@ -1,5 +1,6 @@
 import React from 'react';
-import { FileSpreadsheet, FileType, FileText, File as FileDefaultIcon } from 'lucide-react';
+import Image from 'next/image';
+import { FileText, File as FileDefaultIcon } from 'lucide-react';
 
 interface FileIconProps {
     fileName: string;
@@ -12,30 +13,36 @@ export default function FileIcon({ fileName, size = 16, className = '' }: FileIc
 
     if (ext.endsWith('.xlsx') || ext.endsWith('.xls')) {
         return (
-            <img
+            <Image
                 src="/icons/xlsx_icon.png"
                 alt="xlsx"
-                style={{ width: size, height: size, objectFit: 'contain' }}
+                width={size}
+                height={size}
+                style={{ objectFit: 'contain' }}
                 className={className}
             />
         );
     }
     if (ext.endsWith('.pdf')) {
         return (
-            <img
+            <Image
                 src="/icons/Icon_pdf_file.png"
                 alt="pdf"
-                style={{ width: size, height: size, objectFit: 'contain' }}
+                width={size}
+                height={size}
+                style={{ objectFit: 'contain' }}
                 className={className}
             />
         );
     }
     if (ext.endsWith('.docx') || ext.endsWith('.doc')) {
         return (
-            <img
+            <Image
                 src="/icons/docx_icon.png"
                 alt="docx"
-                style={{ width: size, height: size, objectFit: 'contain' }}
+                width={size}
+                height={size}
+                style={{ objectFit: 'contain' }}
                 className={className}
             />
         );

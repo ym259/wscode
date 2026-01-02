@@ -45,16 +45,15 @@ export function MentionInput({
     const [selectedMentionIndex, setSelectedMentionIndex] = useState(0);
     const lastSelectionRef = useRef<{ node: Node | null; offset: number }>({ node: null, offset: 0 });
 
-    // Recursively collect all files from workspace
-    const collectFiles = useCallback((items: FileSystemItem[], parentPath = ''): { name: string; path: string }[] => {
-        const files: { name: string; path: string }[] = [];
+    // Recursively collect all files AND folders from workspace
+    const collectItems = useCallback((items: FileSystemItem[], parentPath = ''): { name: string; path: string; type: 'file' | 'directory' }[] => {
+        const result: { name: string; path: string; type: 'file' | 'directory' }[] = [];
 
         const collect = (currentItems: FileSystemItem[], currentPath: string) => {
             for (const item of currentItems) {
                 const fullPath = currentPath ? `${currentPath}/${item.name}` : item.name;
-                if (item.type === 'file') {
-                    files.push({ name: item.name, path: fullPath });
-                }
+                // Add both files and directories
+                result.push({ name: item.name, path: fullPath, type: item.type });
                 if (item.children && item.children.length > 0) {
                     collect(item.children, fullPath);
                 }
@@ -62,20 +61,36 @@ export function MentionInput({
         };
 
         collect(items, parentPath);
-        return files;
+        return result;
     }, []);
 
-    const allFiles = collectFiles(workspaceFiles);
+    const allItems = collectItems(workspaceFiles);
 
-    // Filter files based on mention query
-    const filteredFiles = useMemo(() => {
-        return mentionQuery !== null
-            ? allFiles.filter(f =>
-                f.name.toLowerCase().includes(mentionQuery.toLowerCase()) ||
-                f.path.toLowerCase().includes(mentionQuery.toLowerCase())
-            ).slice(0, 8)
-            : [];
-    }, [allFiles, mentionQuery]);
+    // Filter items (files and folders) based on mention query
+    // Prioritize folders when query matches exactly, then files
+    const filteredItems = useMemo(() => {
+        if (mentionQuery === null) return [];
+        
+        const query = mentionQuery.toLowerCase();
+        const matching = allItems.filter(f =>
+            f.name.toLowerCase().includes(query) ||
+            f.path.toLowerCase().includes(query)
+        );
+        
+        // Sort: exact name matches first, then folders, then by path length (shorter = more relevant)
+        return matching
+            .sort((a, b) => {
+                const aExact = a.name.toLowerCase() === query ? 0 : 1;
+                const bExact = b.name.toLowerCase() === query ? 0 : 1;
+                if (aExact !== bExact) return aExact - bExact;
+                
+                // Folders before files when relevance is similar
+                if (a.type !== b.type) return a.type === 'directory' ? -1 : 1;
+                
+                return a.path.length - b.path.length;
+            })
+            .slice(0, 10);
+    }, [allItems, mentionQuery]);
 
     // Focus editor when attached selection is added or when focus is explicitly requested
     useEffect(() => {
@@ -152,7 +167,7 @@ export function MentionInput({
     }, [getPlainText, onChange, detectMentionQuery]);
 
     // Insert mention chip at current cursor position
-    const insertMention = useCallback((file: { name: string; path: string }) => {
+    const insertMention = useCallback((item: { name: string; path: string; type: 'file' | 'directory' }) => {
         const editor = editorRef.current;
         if (!editor) return;
 
@@ -175,10 +190,17 @@ export function MentionInput({
         const chip = document.createElement('span');
         chip.className = styles.inlineMentionChip;
         chip.contentEditable = 'false';
-        chip.dataset.mentionPath = file.path;
+        chip.dataset.mentionPath = item.path;
+        chip.dataset.mentionType = item.type;
+        
+        // Different icons for files vs folders
+        const fileIcon = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>`;
+        const folderIcon = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>`;
+        const icon = item.type === 'directory' ? folderIcon : fileIcon;
+        
         chip.innerHTML = `
-            <span class="${styles.inlineMentionIcon}"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg></span>
-            <span class="${styles.inlineMentionText}">${file.name}</span>
+            <span class="${styles.inlineMentionIcon}">${icon}</span>
+            <span class="${styles.inlineMentionText}">${item.name}${item.type === 'directory' ? '/' : ''}</span>
             <button type="button" class="${styles.inlineMentionRemove}" title="Remove">×</button>
         `;
 
@@ -189,7 +211,7 @@ export function MentionInput({
                 e.preventDefault();
                 e.stopPropagation();
                 chip.remove();
-                onMentionRemove?.(file.path);
+                onMentionRemove?.(item.path);
                 handleInput(); // Update the value
                 editor.focus();
             };
@@ -215,9 +237,9 @@ export function MentionInput({
         selection.removeAllRanges();
         selection.addRange(newRange);
 
-        // Track mention
-        if (onMentionAdd && !mentionedFiles.some(f => f.path === file.path)) {
-            onMentionAdd(file);
+        // Track mention (convert to the expected format)
+        if (onMentionAdd && !mentionedFiles.some(f => f.path === item.path)) {
+            onMentionAdd({ name: item.name, path: item.path });
         }
 
         setMentionQuery(null);
@@ -306,10 +328,10 @@ export function MentionInput({
         if (e.nativeEvent.isComposing) return;
 
         // Handle @mention navigation
-        if (mentionQuery !== null && filteredFiles.length > 0) {
+        if (mentionQuery !== null && filteredItems.length > 0) {
             if (e.key === 'ArrowDown') {
                 e.preventDefault();
-                setSelectedMentionIndex(prev => Math.min(prev + 1, filteredFiles.length - 1));
+                setSelectedMentionIndex(prev => Math.min(prev + 1, filteredItems.length - 1));
                 return;
             }
             if (e.key === 'ArrowUp') {
@@ -319,7 +341,7 @@ export function MentionInput({
             }
             if (e.key === 'Enter' || e.key === 'Tab') {
                 e.preventDefault();
-                insertMention(filteredFiles[selectedMentionIndex]);
+                insertMention(filteredItems[selectedMentionIndex]);
                 return;
             }
             if (e.key === 'Escape') {
@@ -333,7 +355,7 @@ export function MentionInput({
             e.preventDefault();
             handleSubmitWithSelection();
         }
-    }, [mentionQuery, filteredFiles, selectedMentionIndex, insertMention, handleSubmitWithSelection]);
+    }, [mentionQuery, filteredItems, selectedMentionIndex, insertMention, handleSubmitWithSelection]);
 
     // Truncate selection text for display
     const getDisplayText = (text: string, maxLength = 50) => {
@@ -344,17 +366,31 @@ export function MentionInput({
     return (
         <>
             {/* @mention suggestion popup */}
-            {mentionQuery !== null && filteredFiles.length > 0 && (
+            {mentionQuery !== null && filteredItems.length > 0 && (
                 <div className={styles.mentionPopup}>
-                    {filteredFiles.map((file, index) => (
+                    {filteredItems.map((item, index) => (
                         <div
-                            key={file.path}
+                            key={item.path}
                             className={`${styles.mentionItem} ${index === selectedMentionIndex ? styles.mentionItemSelected : ''}`}
-                            onClick={() => insertMention(file)}
+                            onClick={() => insertMention(item)}
                             onMouseEnter={() => setSelectedMentionIndex(index)}
                         >
-                            <span className={styles.mentionFileName}>{file.name}</span>
-                            <span className={styles.mentionFilePath}>{file.path}</span>
+                            <span className={styles.mentionItemIcon}>
+                                {item.type === 'directory' ? (
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                        <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+                                    </svg>
+                                ) : (
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                                        <polyline points="14 2 14 8 20 8"/>
+                                    </svg>
+                                )}
+                            </span>
+                            <span className={styles.mentionFileName}>
+                                {item.name}{item.type === 'directory' ? '/' : ''}
+                            </span>
+                            <span className={styles.mentionFilePath}>{item.path}</span>
                         </div>
                     ))}
                 </div>

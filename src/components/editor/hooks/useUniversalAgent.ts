@@ -114,6 +114,18 @@ export function useUniversalAgent(config: UniversalAgentConfig) {
                 return;
             }
 
+            // For workspace-only mode (no active file), we're ready for basic tools
+            if (isReady && !activeFileType && workspaceFiles && workspaceFiles.length > 0) {
+                console.log('[UniversalAgent] Workspace-only mode, ready for basic tools. Files:', workspaceFiles.length);
+                setIsAiInitialized(true);
+                return;
+            }
+            
+            // Log why we're not ready
+            if (isReady && !activeFileType) {
+                console.log('[UniversalAgent] Waiting for workspace files...', { workspaceFiles: workspaceFiles?.length || 0 });
+            }
+
             if (aiActionsRef.current) {
                 console.log('[UniversalAgent] Clearing AIActions');
                 aiActionsRef.current = null;
@@ -156,7 +168,7 @@ export function useUniversalAgent(config: UniversalAgentConfig) {
             console.error('[UniversalAgent] Failed to initialize AIActions:', err);
             setIsAiInitialized(false);
         }
-    }, [isReady, superdocRef, customEditorRef, activeFileType, usingSuperDoc, usingCustomEditor]);
+    }, [isReady, superdocRef, customEditorRef, activeFileType, usingSuperDoc, usingCustomEditor, workspaceFiles]);
 
     // Handler for AI actions
     const handleAiAction = useCallback(async (
@@ -233,7 +245,15 @@ export function useUniversalAgent(config: UniversalAgentConfig) {
                 toolCount: toolDefinitions.length,
                 toolNames: toolDefinitions.map(t => t.function.name)
             });
-            console.log('[UniversalAgent] System prompt preview:', systemPrompt.substring(0, 500));
+            console.log('[UniversalAgent] System prompt preview:', systemPrompt.substring(0, 1500));
+            console.log('[UniversalAgent] User prompt:', prompt);
+            console.log('[UniversalAgent] Has listFolder tool?', toolDefinitions.some(t => t.function.name === 'listFolder'));
+            
+            // Log the full tool definitions for listFolder
+            const listFolderTool = toolDefinitions.find(t => t.function.name === 'listFolder');
+            if (listFolderTool) {
+                console.log('[UniversalAgent] listFolder tool definition:', JSON.stringify(listFolderTool.function, null, 2));
+            }
 
             // Initialize OpenAI client
             const OpenAI = (await import('openai')).default;
@@ -316,6 +336,10 @@ export function useUniversalAgent(config: UniversalAgentConfig) {
 
             let previousResponseId: string | undefined;
 
+            // Log the first message to debug
+            console.log('[UniversalAgent] Messages to send:', JSON.stringify(messages.slice(0, 3), null, 2));
+            console.log('[UniversalAgent] Tools count:', responsesApiTools.length);
+
             while (loopCount < MAX_LOOPS) {
                 loopCount++;
 
@@ -329,7 +353,9 @@ export function useUniversalAgent(config: UniversalAgentConfig) {
                     reasoning: { summary: 'auto', effort: 'medium' },
                     text: {
                         verbosity: 'low'
-                    }
+                    },
+                    // Force tool usage for @ mentions - don't ask clarifying questions
+                    instructions: 'When you see @ mentions (like @folder or @file), ALWAYS use a tool immediately. For folders, use listFolder(). For files, use readFile() or loadPdf(). NEVER ask clarifying questions - just use the tool and report results.'
                 });
 
                 let finalContent = '';

@@ -12,6 +12,7 @@ export interface CustomDocEditorHandle {
     setDocumentMode: (mode: 'editing' | 'suggesting') => void;
     export: () => Promise<Blob | null>;
     scrollToBlock: (blockIndex: number) => void;
+    scrollToPosition: (position: number) => void;
     getDocAttrs: () => any;
     setPageLayout: (updates: PageLayoutUpdate) => void;
     getPageCount: () => number;

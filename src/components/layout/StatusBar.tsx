@@ -7,13 +7,11 @@ import { useWorkspace } from '@/contexts/WorkspaceContext';
 
 interface StatusBarProps {
     branch?: string;
-    cursorPosition?: { line: number; column: number };
     documentStatus?: 'saved' | 'unsaved' | 'error';
 }
 
 export default function StatusBar({
     branch = 'main',
-    cursorPosition = { line: 1, column: 1 },
     documentStatus = 'saved'
 }: StatusBarProps) {
     const { documentStats } = useWorkspace();

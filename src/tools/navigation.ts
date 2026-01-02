@@ -78,7 +78,7 @@ export const getNavigationTools = (context: ToolContext): ToolDefinition[] => {
                             superdoc.goToSearchResult(results[goToResult]);
                         }
 
-                        // Format results for the agent
+                        // Format results for the agent with clickable scroll links
                         const formattedResults = results.slice(0, 20).map((match, index) => ({
                             index,
                             text: match.text.length > 100 ? match.text.substring(0, 100) + '...' : match.text,
@@ -87,7 +87,7 @@ export const getNavigationTools = (context: ToolContext): ToolDefinition[] => {
 
                         let response = `Found ${results.length} match${results.length === 1 ? '' : 'es'} for "${query}":\n\n`;
                         formattedResults.forEach(result => {
-                            response += `[${result.index}] "${result.text}" (position: ${result.position.from}-${result.position.to})\n`;
+                            response += `- [📍 #${result.index}](scroll://${result.position.from}) "${result.text}"\n`;
                         });
 
                         if (results.length > 20) {
@@ -96,8 +96,6 @@ export const getNavigationTools = (context: ToolContext): ToolDefinition[] => {
 
                         if (goToResult !== undefined) {
                             response += `\n\nNavigated to result #${goToResult}.`;
-                        } else {
-                            response += '\n\nTip: Use goToResult parameter to navigate to a specific match.';
                         }
 
                         return response;
@@ -158,19 +156,17 @@ export const getNavigationTools = (context: ToolContext): ToolDefinition[] => {
                             return `No matches found for "${query}"${isRegex ? ' (regex)' : ''}.`;
                         }
 
-                        // Format results similar to SuperDoc
+                        // Format results with clickable scroll links
                         const displayMatches = matches.slice(0, 20);
                         let response = `Found ${matches.length}${matches.length >= 50 ? '+' : ''} match${matches.length === 1 ? '' : 'es'} for "${query}"${isRegex ? ' (regex)' : ''}:\n\n`;
 
                         displayMatches.forEach(m => {
-                            response += `[${m.index}] "${m.text}" at ${m.from}-${m.to}\n    Context: "${m.context}"\n`;
+                            response += `- [📍 #${m.index}](scroll://${m.from}) "${m.text}"\n  Context: "${m.context}"\n`;
                         });
 
                         if (matches.length > 20) {
                             response += `\n... and ${matches.length - 20} more matches.`;
                         }
-
-                        response += '\n\nTip: Use isRegex: true for regex patterns like "section \\\\d+" or "第\\\\d+条"';
 
                         return response;
                     }
@@ -395,6 +391,102 @@ export const getNavigationTools = (context: ToolContext): ToolDefinition[] => {
                 } catch (error) {
                     return `Error reading file: ${error instanceof Error ? error.message : 'Unknown error'}`;
                 }
+            }
+        ),
+
+        createTool(
+            'listFolder',
+            'List all files in a folder mentioned with @. Use this to see what files are available in a folder before reading them. Returns file names, types, and sizes.',
+            {
+                type: 'object',
+                properties: {
+                    path: {
+                        type: 'string',
+                        description: 'The folder path as shown in the workspace (e.g., "裁判書面" or "SAMPLE/subfolder").'
+                    },
+                    recursive: {
+                        type: 'boolean',
+                        description: 'If true, include files from subfolders. Default: false.'
+                    }
+                },
+                required: ['path'],
+                additionalProperties: false
+            },
+            async ({ path, recursive = false }: { path: string; recursive?: boolean }) => {
+                if (!workspaceFiles || workspaceFiles.length === 0) {
+                    return 'No workspace files available. Please open a folder first.';
+                }
+
+                // Normalize folder path (remove trailing slash)
+                const normalizedPath = path.replace(/\/$/, '');
+
+                // Find the folder in workspace
+                const findFolder = (items: any[], currentPath = ''): any | null => {
+                    for (const item of items) {
+                        const fullPath = currentPath ? `${currentPath}/${item.name}` : item.name;
+                        if (item.type === 'directory') {
+                            if (fullPath === normalizedPath || item.name === normalizedPath) {
+                                return { item, fullPath };
+                            }
+                            if (item.children) {
+                                const found = findFolder(item.children, fullPath);
+                                if (found) return found;
+                            }
+                        }
+                    }
+                    return null;
+                };
+
+                const found = findFolder(workspaceFiles);
+                if (!found) {
+                    return `Folder not found: "${path}". Available root folders: ${workspaceFiles.filter(f => f.type === 'directory').map(f => f.name).join(', ') || 'none'}`;
+                }
+
+                const { item: folder, fullPath: folderPath } = found;
+
+                // Collect files
+                const files: { name: string; path: string; type: string }[] = [];
+                const collectFiles = (items: any[], basePath: string, depth = 0) => {
+                    for (const f of items || []) {
+                        const filePath = `${basePath}/${f.name}`;
+                        if (f.type === 'file') {
+                            files.push({ name: f.name, path: filePath, type: f.name.split('.').pop() || 'unknown' });
+                        } else if (f.type === 'directory' && recursive && depth < 3) {
+                            collectFiles(f.children, filePath, depth + 1);
+                        }
+                    }
+                };
+
+                collectFiles(folder.children, folderPath);
+
+                if (files.length === 0) {
+                    return `Folder "${path}" is empty or contains only subfolders.${recursive ? '' : ' Use recursive: true to search subfolders.'}`;
+                }
+
+                // Format output
+                let result = `## Contents of "${path}"\n\n`;
+                result += `Found ${files.length} file(s):\n\n`;
+
+                // Group by type
+                const byType: Record<string, typeof files> = {};
+                for (const f of files) {
+                    if (!byType[f.type]) byType[f.type] = [];
+                    byType[f.type].push(f);
+                }
+
+                for (const [type, typeFiles] of Object.entries(byType)) {
+                    result += `**${type.toUpperCase()}** (${typeFiles.length}):\n`;
+                    for (const f of typeFiles.slice(0, 20)) {
+                        result += `- \`${f.path}\`\n`;
+                    }
+                    if (typeFiles.length > 20) {
+                        result += `  ... and ${typeFiles.length - 20} more ${type} files\n`;
+                    }
+                    result += '\n';
+                }
+
+                result += `\nUse \`readFile(path)\` to read any file, or \`loadPdf(path)\` for PDF files.`;
+                return result;
             }
         ),
 

@@ -71,6 +71,7 @@ export function useAiAgent({
 
         try {
             console.log('[useAiAgent] executeAiAction userMessage:', userMessage);
+            console.log('[useAiAgent] aiActionHandler exists?', !!aiActionHandler);
 
             if (aiActionHandler) {
                 const assistantMsgId = addMessage({

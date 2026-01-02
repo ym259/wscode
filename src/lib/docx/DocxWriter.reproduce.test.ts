@@ -58,7 +58,7 @@ describe('DocxWriter Reproduction', () => {
             attrs: {} // Add empty attrs
         };
 
-        const blob = await writer.export(content as any);
+        const blob = await writer.export(content as Parameters<typeof writer.export>[0]);
         const resultZip = await JSZip.loadAsync(blob);
 
         // 4. Verify Content_Types.xml

@@ -919,7 +919,7 @@ ${relationships}
             overrides = [overrides];
         }
 
-        const existingParts = new Set<string>(overrides.map((o: any) => o.PartName));
+        const existingParts = new Set<string>(overrides.map((o: { PartName: string }) => o.PartName));
         let modified = false;
 
         // Check for numbering.xml
@@ -976,7 +976,7 @@ ${relationships}
         let maxId = 0;
         const existingTargets = new Set<string>();
 
-        relationships.forEach((rel: any) => {
+        relationships.forEach((rel: { Id?: string; Target?: string }) => {
             if (rel.Id && rel.Id.startsWith('rId')) {
                 const id = parseInt(rel.Id.substring(3));
                 if (!isNaN(id) && id > maxId) maxId = id;
