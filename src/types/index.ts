@@ -35,7 +35,7 @@ export interface ToolCall {
     timestamp: number;
 }
 
-// Search result match from searchDocument tool
+// Search result match from semanticSearch tool
 export interface SearchMatch {
     blockIndex: number;
     text: string;

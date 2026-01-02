@@ -15,7 +15,7 @@ export const getNavigationTools = (context: ToolContext): ToolDefinition[] => {
     return [
         createTool(
             'keywordSearch',
-            'Search for text using exact match or regex. Use this for finding specific strings like "Section 1.2" or regex patterns. Faster than searchDocument but requires exact phrasing.',
+            'Fast, free keyword/regex search. Best for: exact terms, patterns, article numbers, names, dates (e.g., "第1条", "Section \\d+"). Consider this first as it is faster and cheaper than semanticSearch.',
             {
                 type: 'object',
                 properties: {
@@ -175,7 +175,7 @@ export const getNavigationTools = (context: ToolContext): ToolDefinition[] => {
                         return response;
                     }
                 } catch (error) {
-                    console.error('[searchDocument] Error:', error);
+                    console.error('[keywordSearch] Error:', error);
                     return `Error searching document: ${error instanceof Error ? error.message : 'Unknown error'}`;
                 }
             }

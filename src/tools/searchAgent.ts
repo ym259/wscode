@@ -89,7 +89,7 @@ async function runSearchBatch(
 
     for (let i = 0; i < chunks.length; i += maxConcurrent) {
         const batch = chunks.slice(i, i + maxConcurrent);
-        console.log(`[searchDocument] Processing batch ${Math.floor(i / maxConcurrent) + 1}/${Math.ceil(chunks.length / maxConcurrent)}`);
+        console.log(`[semanticSearch] Processing batch ${Math.floor(i / maxConcurrent) + 1}/${Math.ceil(chunks.length / maxConcurrent)}`);
 
         const batchPromises = batch.map(async (chunk) => {
             try {
@@ -117,12 +117,12 @@ async function runSearchBatch(
                         matches = parsed;
                     }
                 } catch (e) {
-                    console.warn(`[searchDocument] JSON parse error in chunk ${chunk.startBlock}:`, e);
+                    console.warn(`[semanticSearch] JSON parse error in chunk ${chunk.startBlock}:`, e);
                 }
 
                 return { success: true, data: matches };
             } catch (error) {
-                console.error(`[searchDocument] Error in chunk ${chunk.startBlock}:`, error);
+                console.error(`[semanticSearch] Error in chunk ${chunk.startBlock}:`, error);
                 return { success: false, data: null };
             }
         });
@@ -153,8 +153,8 @@ export const getSearchTools = (context: ToolContext): ToolDefinition[] => {
 
     return [
         createTool(
-            'searchDocument',
-            'Search the document for specific content, concepts, or text. Use this when asked "Where is X?" or "Find X". Returns list of relevant blocks.',
+            'semanticSearch',
+            'AI-powered semantic search using sub-agents. Best for: conceptual queries, thematic content, or when exact keywords are unknown (e.g., "clauses about liability", "payment terms"). More expensive than keywordSearch but finds meaning-based matches.',
             {
                 type: 'object',
                 properties: {
@@ -186,7 +186,7 @@ export const getSearchTools = (context: ToolContext): ToolDefinition[] => {
                             dangerouslyAllowBrowser: openaiConfig.dangerouslyAllowBrowser
                         });
                     } catch (e) {
-                        console.error('[searchDocument] Failed to create OpenAI client:', e);
+                        console.error('[semanticSearch] Failed to create OpenAI client:', e);
                     }
                 }
 
@@ -195,7 +195,7 @@ export const getSearchTools = (context: ToolContext): ToolDefinition[] => {
 
                 if (totalBlocks === 0) return JSON.stringify({ matches: [] });
 
-                console.log(`[searchDocument] Searching for "${query}" in ${totalBlocks} blocks`);
+                console.log(`[semanticSearch] Searching for "${query}" in ${totalBlocks} blocks`);
 
                 const chunks: { startBlock: number; endBlock: number; content: string }[] = [];
                 for (let i = 0; i < totalBlocks; i += blocksPerChunk) {

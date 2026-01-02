@@ -1,6 +1,12 @@
 /* eslint-disable @typescript-eslint/no-explicit-any, prefer-const */
 import { ToolDefinition, createTool, ToolContext } from '../types';
 import { findTextPositionExcludingDeletions } from './utils';
+import DiffMatchPatch from 'diff-match-patch';
+
+// Diff operation types from diff-match-patch
+const DIFF_DELETE = -1;
+const DIFF_INSERT = 1;
+const DIFF_EQUAL = 0;
 
 export const getTextEditTools = (context: ToolContext): ToolDefinition[] => {
     return [
@@ -126,67 +132,69 @@ export const getTextEditTools = (context: ToolContext): ToolDefinition[] => {
                                 schema.marks.delete;
 
                             if (insertionMarkType && deletionMarkType) {
-                                console.log('[editText] Applying minimal diff track changes');
+                                console.log('[editText] Applying minimal diff track changes using diff-match-patch');
 
                                 const tr = editor.state.tr;
 
-                                // Compute minimal diff between original and replacement
-                                // Find common prefix and suffix to minimize tracked changes
+                                // Use diff-match-patch for truly minimal character-level diff
                                 const originalText = find;
                                 const newText = effectiveReplace;
 
-                                // Find common prefix length
-                                let prefixLen = 0;
-                                const minLen = Math.min(originalText.length, newText.length);
-                                while (prefixLen < minLen && originalText[prefixLen] === newText[prefixLen]) {
-                                    prefixLen++;
+                                const dmp = new DiffMatchPatch();
+                                // Compute diff and clean up for better readability (semantic cleanup)
+                                const diffs = dmp.diff_main(originalText, newText);
+                                dmp.diff_cleanupSemantic(diffs);
+
+                                console.log('[editText] Diff operations:', diffs);
+
+                                // Track deletions and insertions for result message
+                                const deletions: string[] = [];
+                                const insertions: string[] = [];
+
+                                // Process diffs in forward order, using transaction mapping to track position shifts
+                                // originalOffset: position within the original text (find string)
+                                // This advances for EQUAL and DELETE (text that exists in original)
+                                let originalOffset = 0;
+
+                                for (const [op, text] of diffs) {
+                                    // Map from original position to current document position
+                                    // tr.mapping tracks all position changes from previous steps
+                                    const docPos = tr.mapping.map(from + originalOffset);
+
+                                    if (op === DIFF_EQUAL) {
+                                        // No change, just advance position in original text
+                                        originalOffset += text.length;
+                                    } else if (op === DIFF_DELETE) {
+                                        // Mark the text for deletion
+                                        const endDocPos = tr.mapping.map(from + originalOffset + text.length);
+                                        tr.addMark(docPos, endDocPos, deletionMarkType.create({
+                                            author: 'AI Assistant',
+                                            date: new Date().toISOString(),
+                                            comment: suggestionComment || ''
+                                        }));
+                                        deletions.push(text);
+                                        // Advance position - this text exists in original
+                                        originalOffset += text.length;
+                                    } else if (op === DIFF_INSERT) {
+                                        // Insert text with insertion mark
+                                        // Get existing marks at position (excluding track change marks)
+                                        const $pos = tr.doc.resolve(docPos);
+                                        const existingMarks = $pos.marks().filter((m: any) =>
+                                            m.type !== deletionMarkType && m.type !== insertionMarkType
+                                        );
+                                        const newMarks = [...existingMarks, insertionMarkType.create({
+                                            author: 'AI Assistant',
+                                            date: new Date().toISOString(),
+                                            comment: suggestionComment || ''
+                                        })];
+                                        const newTextNode = schema.text(text, newMarks);
+                                        tr.insert(docPos, newTextNode);
+                                        insertions.push(text);
+                                        // Don't advance originalOffset - insertions don't exist in original text
+                                    }
                                 }
 
-                                // Find common suffix length (but don't overlap with prefix)
-                                let suffixLen = 0;
-                                while (
-                                    suffixLen < (originalText.length - prefixLen) &&
-                                    suffixLen < (newText.length - prefixLen) &&
-                                    originalText[originalText.length - 1 - suffixLen] === newText[newText.length - 1 - suffixLen]
-                                ) {
-                                    suffixLen++;
-                                }
-
-                                // Calculate the changed portions
-                                const deletedPart = originalText.slice(prefixLen, originalText.length - suffixLen);
-                                const insertedPart = newText.slice(prefixLen, newText.length - suffixLen);
-
-                                // Positions in document
-                                const deleteFrom = from + prefixLen;
-                                const deleteTo = to - suffixLen;
-
-                                console.log(`[editText] Diff: prefix=${prefixLen}, suffix=${suffixLen}, delete="${deletedPart}", insert="${insertedPart}"`);
-
-                                // Apply minimal changes
-                                // Apply minimal changes
-                                if (deletedPart.length > 0) {
-                                    // Mark only the deleted portion
-                                    tr.addMark(deleteFrom, deleteTo, deletionMarkType.create({
-                                        author: 'AI Assistant',
-                                        date: new Date().toISOString(),
-                                        comment: suggestionComment || ''
-                                    }));
-                                }
-
-                                if (insertedPart.length > 0) {
-                                    // Insert only the new portion with insertion mark
-                                    const $pos = tr.doc.resolve(deleteFrom);
-                                    const existingMarks = $pos.marks().filter((m: any) =>
-                                        m.type !== deletionMarkType && m.type !== insertionMarkType
-                                    );
-                                    const newMarks = [...existingMarks, insertionMarkType.create({
-                                        author: 'AI Assistant',
-                                        date: new Date().toISOString(),
-                                        comment: suggestionComment || ''
-                                    })];
-                                    const newTextNode = schema.text(insertedPart, newMarks);
-                                    tr.insert(deleteTo, newTextNode);
-                                }
+                                console.log('[editText] Applied operations - deletions:', deletions, 'insertions:', insertions);
 
                                 // Dispatch the change
                                 editor.view.dispatch(tr);
@@ -195,7 +203,10 @@ export const getTextEditTools = (context: ToolContext): ToolDefinition[] => {
                                 const newTextEnd = from + newText.length;
                                 editor.chain().setTextSelection({ from, to: newTextEnd }).run();
 
-                                resultMsg += ` with "${effectiveReplace}" (Tracked: -"${deletedPart || '(none)'}" +"${insertedPart || '(none)'}")`;
+                                // Build result message showing minimal diff
+                                const deletedSummary = deletions.length > 0 ? deletions.map(d => `"${d}"`).join(', ') : '(none)';
+                                const insertedSummary = insertions.length > 0 ? insertions.map(i => `"${i}"`).join(', ') : '(none)';
+                                resultMsg += ` with "${effectiveReplace}" (Tracked: -${deletedSummary} +${insertedSummary})`;
 
                                 // Update from/to for subsequent styling
                                 to = from + newText.length;

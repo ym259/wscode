@@ -51,8 +51,16 @@ Document Stats: ~${docStats.charCount.toLocaleString()} chars, ${docStats.estima
 - \`readFile(path)\`: Read any file. For xlsx, use \`sheets\` param.
 - \`loadPdf(path)\`: Load a PDF into AI context for multimodal analysis. After loading, the PDF is available in your next response.
 - \`listSpreadsheetSheets(path)\`: List sheets in xlsx before reading.
-- \`searchDocument(query)\`: Search in active document.
 - \`readDocument()\`: Read active document structure with block IDs.
+
+## Search Tools (choose wisely!)
+- \`keywordSearch(query, isRegex?)\`: Fast, free keyword/regex search. Best for exact terms you already know.
+  - Examples: "第1条", "Section 1.2", article numbers, names, dates, technical terms
+  - Regex: \`keywordSearch({ query: "第\\\\d+条", isRegex: true })\` for patterns like 第1条, 第2条...
+- \`semanticSearch(query)\`: AI-powered semantic search (spawns sub-agents, more expensive). Best for conceptual/thematic queries.
+  - Examples: "clauses about liability", "sections discussing payment terms", "warranty provisions"
+
+**Think before searching**: Can you express it as a keyword or regex pattern? → \`keywordSearch\` (faster, cheaper). Need to find concepts or themes? → \`semanticSearch\`.
 
 ## Writing DOCX (active file)
 - \`reviewDocumentTypos(options?)\`: PRIMARY tool for proofreading. Scans entire doc for typos/errors.
@@ -94,11 +102,12 @@ When converting markdown to Word styles:
 
 # Strategy
 ${isLargeDoc
-        ? '- Large doc: Use searchDocument first, then readDocument with range.'
+        ? '- Large doc: Use keywordSearch for known terms, or semanticSearch for conceptual search. Then readDocument with range.'
         : '- Small doc: Can use readDocument() for full content.'}
+- **Search Strategy**: Consider \`keywordSearch\` for known terms (fast, free). Use \`semanticSearch\` for conceptual/semantic queries.
 - For deletions: ALWAYS get sdBlockId via readDocument first.
 - After list operations: Call fixOrderedListNumbering.
-- **Proofreading/Typos**: ALWAYS use \`reviewDocumentTypos\` immediately. Do NOT call \`readDocument\` or \`searchDocument\` first, as the review tool handles scanning internally.
+- **Proofreading/Typos**: ALWAYS use \`reviewDocumentTypos\` immediately. Do NOT call \`readDocument\` or \`semanticSearch\` first, as the review tool handles scanning internally.
 
 # IMPORTANT: Be Proactive!
 - When asked to edit/convert/format, IMMEDIATELY read the document first using \`readDocument()\`
@@ -125,7 +134,7 @@ ${isLargeDoc ? `This is a large document (~${docStats.estimatedPages} pages). Fo
 2. Process ALL issues found in that section before moving to next
 3. Use \`readDocument(startIndex: 101, endIndex: 200)\` for next section
 4. Continue until entire document is reviewed
-5. For numbering reviews: use \`searchDocument\` with regex like "第\\\\d+条" or "①|②|③"` : ''}
+5. For numbering reviews: use \`keywordSearch\` with regex like "第\\\\d+条" or "①|②|③"` : ''}
 `;
   } else if (activeFileType === 'xlsx') {
     prompt += `
@@ -222,6 +231,20 @@ If a task has multiple steps:
 
 **WRONG**: "I've done X. Remaining tasks: Y, Z" → then stopping
 **CORRECT**: Do X, then Y, then Z → "All tasks completed: X, Y, Z"
+
+# Response Formatting (Markdown)
+Your responses are rendered with full **Markdown support**. Use these features to make responses clear and readable:
+- **Headers**: Use \`#\`, \`##\`, \`###\` to organize sections
+- **Bold/Italic**: Use \`**bold**\` and \`*italic*\` for emphasis
+- **Code**: Use \`inline code\` for file names, commands, or short snippets. Use triple backticks with language for code blocks:
+  \`\`\`typescript
+  const example = "code";
+  \`\`\`
+- **Lists**: Use \`-\` or \`1.\` for unordered/ordered lists
+- **Tables**: Use markdown tables for structured data
+- **Blockquotes**: Use \`>\` for quoting document text or notes
+
+Keep responses concise. Prefer structured formatting over walls of text.
 
 # Important Rules
 - You can READ any file in the workspace
