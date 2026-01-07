@@ -4,9 +4,10 @@
 .ProseMirror {
     outline: none;
     color: black !important;
-    /* Match Word's default font for this document: HiraMinProN-W3 at 12pt (24 half-points) */
+    /* Font family matches Word's default Japanese font */
     font-family: "Hiragino Mincho ProN", "Hiragino Mincho Pro", "Yu Mincho", "YuMincho", "MS PMincho", "MS Mincho", serif;
-    font-size: 12pt;
+    /* Font size from docDefaults (w:sz value), set via CSS variable from PagedEditorContent */
+    font-size: var(--doc-default-font-size, 10.5pt);
     /* Let document specify line-height via inline styles; fallback to Word's default "Multiple 1.15" */
     line-height: 1.15;
     /* Match Word's default letter-spacing (calibrated to 0.015em to force Line 1 wrapping) */
@@ -18,8 +19,7 @@
 .ProseMirror p {
     margin-bottom: 0;
     margin-top: 0;
-    /* Inherit line-height from inline style if set, otherwise use parent default */
-    font-size: 12pt;
+    /* Inherit font-size from parent (set via docDefaults) */
 }
 
 .ProseMirror h1 {
@@ -86,6 +86,18 @@
     color: black !important;
 }
 
+/* When numIndent is explicitly set (via inline style from DocxReader), respect it */
+/* Reset default padding so inline style (padding-left) takes full effect */
+.ProseMirror ol[data-num-indent-left] {
+    padding-left: 0;
+    /* Let inline style handle it */
+}
+
+/* Special case: when numIndent left is 0 (no indent), ensure no extra padding */
+.ProseMirror ol[data-num-indent-left="0"] {
+    padding-left: 0 !important;
+}
+
 /* Ensure list markers are black */
 .ProseMirror li::marker {
     color: black !important;
@@ -96,7 +108,64 @@
 }
 
 .ProseMirror ol {
-    list-style-type: decimal !important;
+    list-style-type: decimal;
+}
+
+/* Allow inline style from data-num-fmt attribute to override default */
+.ProseMirror ol[data-num-fmt] {
+    list-style-type: none;
+    /* Hide default marker, use custom content */
+}
+
+/* ideographTraditional format: （甲）（乙）（丙）... */
+.ProseMirror ol[data-num-fmt="ideographTraditional"] {
+    counter-reset: ideograph-counter;
+}
+
+.ProseMirror ol[data-num-fmt="ideographTraditional"]>li {
+    counter-increment: ideograph-counter;
+    display: flex;
+    align-items: baseline;
+}
+
+.ProseMirror ol[data-num-fmt="ideographTraditional"]>li::before {
+    content: "（" counter(ideograph-counter, cjk-heavenly-stem) "）";
+    white-space: nowrap;
+    /* Pull marker left to clear the negative text-indent of the paragraph */
+    /* Net width contribution to flex flow = 2.5 + (-4.5) + 2.0 = 0 */
+    /* This ensures Line 2 starts at the padding edge, while Marker is left of Line 1 */
+    margin-left: -4.5em;
+    width: 2.5em;
+    margin-right: 2.0em;
+    display: inline-block;
+    text-align: right;
+}
+
+/* ============================================================================
+   PARAGRAPH-BASED LIST RENDERING
+   List items are rendered as <p> with data-list-* attributes.
+   The marker is generated via CSS ::before pseudo-element.
+   ============================================================================ */
+
+/* Base styles for all list paragraphs */
+.ProseMirror p[data-list-num-id] {
+    position: relative;
+    /* Inline styles from listIndentHanging provide padding-left */
+    /* Inline styles from listIndentLeft provide margin-left */
+}
+
+/* === COMMON MARKER STYLES === */
+/* All list markers use pre-rendered marker text from listMarkerText attribute */
+.ProseMirror p[data-list-num-id]::before {
+    content: attr(data-list-marker-text);
+    position: absolute;
+    /* Position marker's RIGHT edge at the text start (left edge of content after padding) */
+    /* left: gutter value, then translateX(-100%) shifts marker left by its own width */
+    left: var(--list-gutter, 2.5em);
+    transform: translateX(-100%);
+    /* Small gap between marker and text */
+    padding-right: 0.5em;
+    white-space: nowrap;
 }
 
 /* Nested ordered lists - Japanese document style numbering */
@@ -225,11 +294,13 @@
         outline: 3px solid rgba(250, 204, 21, 0.8);
         outline-offset: 2px;
     }
+
     70% {
         background-color: rgba(250, 204, 21, 0.3) !important;
         outline: 2px solid rgba(250, 204, 21, 0.5);
         outline-offset: 1px;
     }
+
     100% {
         background-color: transparent !important;
         outline: none;

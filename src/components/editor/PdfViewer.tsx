@@ -13,7 +13,17 @@ interface PdfViewerProps {
 }
 
 export default function PdfViewer({ file, fileName, handle }: PdfViewerProps) {
-    const { setDocumentStats, setAIActionHandler, rootItems, openFile, libraryItems, openTabs } = useWorkspace();
+    const { setDocumentStats, setAIActionHandler, rootItems, openFile, libraryItems, openTabs, addWorkspaceItem } = useWorkspace();
+
+    // Callback to add a newly created file to the workspace
+    const addFileToWorkspace = useCallback((fileHandle: FileSystemFileHandle) => {
+        addWorkspaceItem({
+            name: fileHandle.name,
+            path: fileHandle.name,
+            type: 'file',
+            handle: fileHandle,
+        });
+    }, [addWorkspaceItem]);
     const [url, setUrl] = useState<string | null>(null);
 
     // Helper to find file by path and open it
@@ -71,7 +81,8 @@ export default function PdfViewer({ file, fileName, handle }: PdfViewerProps) {
         openTabs,
         libraryItems,
         setAIActionHandler,
-        openFileInEditor: openFileByPath
+        openFileInEditor: openFileByPath,
+        addFileToWorkspace
     });
 
     useEffect(() => {

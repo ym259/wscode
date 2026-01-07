@@ -29,7 +29,17 @@ interface CustomDocEditorWrapperProps {
 }
 
 export default function CustomDocEditorWrapper({ file, fileName, handle }: CustomDocEditorWrapperProps) {
-    const { setAIActionHandler, setVoiceToolHandler, rootItems, setDocumentStats, libraryItems, openTabs, setAttachedSelection, requestComposerFocus } = useWorkspace();
+    const { setAIActionHandler, setVoiceToolHandler, rootItems, setDocumentStats, libraryItems, openTabs, setAttachedSelection, requestComposerFocus, addWorkspaceItem } = useWorkspace();
+
+    // Callback to add a newly created file to the workspace
+    const addFileToWorkspace = useCallback((fileHandle: FileSystemFileHandle) => {
+        addWorkspaceItem({
+            name: fileHandle.name,
+            path: fileHandle.name,
+            type: 'file',
+            handle: fileHandle,
+        });
+    }, [addWorkspaceItem]);
     const editorRef = useRef<CustomDocEditorHandle>(null);
     const [editorReady, setEditorReady] = useState(false);
     const lastStatsUpdateRef = useRef<number>(0);
@@ -46,6 +56,7 @@ export default function CustomDocEditorWrapper({ file, fileName, handle }: Custo
         libraryItems,
         setAIActionHandler,
         setVoiceToolHandler,
+        addFileToWorkspace,
         // TODO: Implement openFileInEditor for CustomDocEditor if needed, 
         // similar to DocxEditor's openFileByPath if looking to support cross-file nav
     });

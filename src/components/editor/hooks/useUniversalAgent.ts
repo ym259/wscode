@@ -76,7 +76,8 @@ export function useUniversalAgent(config: UniversalAgentConfig) {
         setAIActionHandler,
         setVoiceToolHandler,
         setCellValue,
-        openFileInEditor
+        openFileInEditor,
+        addFileToWorkspace
     } = config;
 
     const activeFileType = config.activeFileType || detectFileType(activeFilePath);
@@ -206,6 +207,7 @@ export function useUniversalAgent(config: UniversalAgentConfig) {
                 setAIActionHandler,
                 setCellValue,
                 openFileInEditor,
+                addFileToWorkspace,
                 addLoadedPdfFile
             };
             const context = buildToolContext(contextConfig, aiActionsRef.current);
@@ -560,7 +562,8 @@ export function useUniversalAgent(config: UniversalAgentConfig) {
             setAIActionHandler,
             setVoiceToolHandler,
             setCellValue,
-            openFileInEditor
+            openFileInEditor,
+            addFileToWorkspace
         };
         const context = buildToolContext(contextConfig, aiActionsRef.current);
         const toolDefinitions = getToolsForFileType(context, activeFileType);

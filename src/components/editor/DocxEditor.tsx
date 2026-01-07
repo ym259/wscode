@@ -17,7 +17,17 @@ interface DocxEditorProps {
 }
 
 export default function DocxEditor({ file, fileName, handle }: DocxEditorProps) {
-    const { setAIActionHandler, rootItems, setAttachedSelection, requestComposerFocus, openFile, setDocumentStats, libraryItems, openTabs } = useWorkspace();
+    const { setAIActionHandler, rootItems, setAttachedSelection, requestComposerFocus, openFile, setDocumentStats, libraryItems, openTabs, addWorkspaceItem } = useWorkspace();
+
+    // Callback to add a newly created file to the workspace
+    const addFileToWorkspace = useCallback((fileHandle: FileSystemFileHandle) => {
+        addWorkspaceItem({
+            name: fileHandle.name,
+            path: fileHandle.name,
+            type: 'file',
+            handle: fileHandle,
+        });
+    }, [addWorkspaceItem]);
     const containerRef = useRef<HTMLDivElement>(null);
     const lastStatsUpdateRef = useRef<number>(0);
 
@@ -88,7 +98,8 @@ export default function DocxEditor({ file, fileName, handle }: DocxEditorProps) 
         openTabs,
         libraryItems,
         setAIActionHandler,
-        openFileInEditor: openFileByPath
+        openFileInEditor: openFileByPath,
+        addFileToWorkspace
     });
 
     // Monitor editor changes and update stats

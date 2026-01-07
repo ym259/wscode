@@ -34,6 +34,8 @@ export interface UniversalAgentConfig {
     setCellValue?: (cell: string, value: string | number, sheetName?: string, options?: boolean | { isNumber?: boolean; isFormula?: boolean; style?: Record<string, unknown> }) => void;
     /** Callback to open a file in the editor (switches active file) */
     openFileInEditor?: (path: string) => Promise<boolean>;
+    /** Callback to add a new file to the workspace (after creating a new file) */
+    addFileToWorkspace?: (handle: FileSystemFileHandle) => void;
     /** Callback to register a loaded PDF file_id for injection into next message */
     addLoadedPdfFile?: (file: { file_id: string; filename: string }) => void;
 }

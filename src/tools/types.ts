@@ -36,6 +36,8 @@ export interface ToolContext {
     setCellValue?: (cell: string, value: string | number, sheetName?: string, options?: boolean | { isNumber?: boolean; isFormula?: boolean; style?: Record<string, unknown> }) => void;
     /** Callback to open a file in the editor (switches active file) */
     openFileInEditor?: (path: string) => Promise<boolean>;
+    /** Callback to add a new file to the workspace (after creating a new file) */
+    addFileToWorkspace?: (handle: FileSystemFileHandle) => void;
     /** OpenAI Configuration for sub-agents */
     openaiConfig?: {
         apiKey: string;

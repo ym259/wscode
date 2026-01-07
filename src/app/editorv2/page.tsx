@@ -39,7 +39,17 @@ const CustomDocEditor = dynamic(
  * Inner component that uses workspace context
  */
 function EditorV2Content() {
-    const { setAIActionHandler, setVoiceToolHandler, isPanelOpen, togglePanel } = useWorkspace();
+    const { setAIActionHandler, setVoiceToolHandler, isPanelOpen, togglePanel, addWorkspaceItem } = useWorkspace();
+
+    // Callback to add a newly created file to the workspace
+    const addFileToWorkspace = React.useCallback((fileHandle: FileSystemFileHandle) => {
+        addWorkspaceItem({
+            name: fileHandle.name,
+            path: fileHandle.name,
+            type: 'file',
+            handle: fileHandle,
+        });
+    }, [addWorkspaceItem]);
     const [file, setFile] = useState<File | null>(null);
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -57,6 +67,7 @@ function EditorV2Content() {
         workspaceFiles: [],
         setAIActionHandler,
         setVoiceToolHandler,
+        addFileToWorkspace,
     });
 
     // Check if editor is ready - stop once ready

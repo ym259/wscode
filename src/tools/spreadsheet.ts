@@ -10,7 +10,7 @@ import { findFileHandle } from './utils';
  * Get spreadsheet-specific tools for reading and modifying xlsx files
  */
 export const getSpreadsheetTools = (context: ToolContext): ToolDefinition[] => {
-    const { workspaceFiles, activeFilePath, activeFileHandle, setCellValue } = context;
+    const { workspaceFiles, activeFilePath, activeFileHandle, setCellValue, addFileToWorkspace } = context;
 
     return [
         createTool(
@@ -339,6 +339,191 @@ export const getSpreadsheetTools = (context: ToolContext): ToolDefinition[] => {
                 } catch (error) {
                     console.error('[readSpreadsheetRange] Error:', error);
                     return `Error reading range: ${error instanceof Error ? error.message : 'Unknown error'}`;
+                }
+            }
+        ),
+
+        createTool(
+            'createSpreadsheet',
+            'Create a new Excel spreadsheet file with the specified data. Use this tool when the user wants to export data to a new xlsx file. The file will be saved to the user\'s chosen location.',
+            {
+                type: 'object',
+                properties: {
+                    filename: {
+                        type: 'string',
+                        description: 'Suggested filename for the new spreadsheet (e.g., "report.xlsx"). The .xlsx extension will be added if not present.'
+                    },
+                    sheets: {
+                        type: 'array',
+                        description: 'Array of sheets to create. Each sheet has a name and data.',
+                        items: {
+                            type: 'object',
+                            properties: {
+                                name: {
+                                    type: 'string',
+                                    description: 'Sheet name (e.g., "Summary", "Data")'
+                                },
+                                headers: {
+                                    type: 'array',
+                                    items: { type: 'string' },
+                                    description: 'Column headers for the first row'
+                                },
+                                rows: {
+                                    type: 'array',
+                                    description: 'Data rows. Each row is an array of cell values.',
+                                    items: {
+                                        type: 'array',
+                                        items: {
+                                            oneOf: [
+                                                { type: 'string' },
+                                                { type: 'number' },
+                                                { type: 'boolean' },
+                                                { type: 'null' }
+                                            ]
+                                        }
+                                    }
+                                },
+                                columnWidths: {
+                                    type: 'array',
+                                    items: { type: 'number' },
+                                    description: 'Optional column widths in characters'
+                                }
+                            },
+                            required: ['name', 'rows']
+                        }
+                    }
+                },
+                required: ['filename', 'sheets'],
+                additionalProperties: false
+            },
+            async ({ filename, sheets }: {
+                filename: string;
+                sheets: Array<{
+                    name: string;
+                    headers?: string[];
+                    rows: Array<Array<string | number | boolean | null>>;
+                    columnWidths?: number[];
+                }>;
+            }) => {
+                if (!filename) {
+                    return 'Error: filename is required.';
+                }
+
+                if (!sheets || !Array.isArray(sheets) || sheets.length === 0) {
+                    return 'Error: At least one sheet with data is required.';
+                }
+
+                try {
+                    const XLSX = await import('xlsx-js-style');
+                    const workbook = XLSX.utils.book_new();
+
+                    for (const sheet of sheets) {
+                        // Build data array: headers (if provided) + rows
+                        const data: Array<Array<string | number | boolean | null>> = [];
+                        
+                        if (sheet.headers && sheet.headers.length > 0) {
+                            data.push(sheet.headers);
+                        }
+                        
+                        data.push(...sheet.rows);
+
+                        // Create worksheet from data
+                        const worksheet = XLSX.utils.aoa_to_sheet(data);
+
+                        // Apply header styling if headers exist
+                        if (sheet.headers && sheet.headers.length > 0) {
+                            for (let col = 0; col < sheet.headers.length; col++) {
+                                const cellAddress = XLSX.utils.encode_cell({ r: 0, c: col });
+                                if (worksheet[cellAddress]) {
+                                    worksheet[cellAddress].s = {
+                                        font: { bold: true },
+                                        fill: { fgColor: { rgb: 'E2E8F0' } },
+                                        alignment: { horizontal: 'center' }
+                                    };
+                                }
+                            }
+                        }
+
+                        // Set column widths if provided
+                        if (sheet.columnWidths && sheet.columnWidths.length > 0) {
+                            worksheet['!cols'] = sheet.columnWidths.map(w => ({ wch: w }));
+                        } else {
+                            // Auto-calculate column widths based on content
+                            const colWidths: number[] = [];
+                            for (let row = 0; row < data.length; row++) {
+                                for (let col = 0; col < data[row].length; col++) {
+                                    const cellValue = String(data[row][col] ?? '');
+                                    const width = Math.min(Math.max(cellValue.length + 2, 10), 50);
+                                    colWidths[col] = Math.max(colWidths[col] || 0, width);
+                                }
+                            }
+                            if (colWidths.length > 0) {
+                                worksheet['!cols'] = colWidths.map(w => ({ wch: w }));
+                            }
+                        }
+
+                        // Add sheet to workbook
+                        XLSX.utils.book_append_sheet(workbook, worksheet, sheet.name);
+                    }
+
+                    // Generate workbook buffer
+                    const buffer = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' });
+                    const blob = new Blob([buffer], { 
+                        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' 
+                    });
+
+                    // Ensure filename has .xlsx extension
+                    const finalFilename = filename.endsWith('.xlsx') ? filename : `${filename}.xlsx`;
+
+                    // Try to use File System Access API if available
+                    if ('showSaveFilePicker' in window) {
+                        try {
+                            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                            const handle = await (window as any).showSaveFilePicker({
+                                suggestedName: finalFilename,
+                                types: [{
+                                    description: 'Excel Spreadsheet',
+                                    accept: {
+                                        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': ['.xlsx']
+                                    }
+                                }]
+                            });
+
+                            const writable = await handle.createWritable();
+                            await writable.write(blob);
+                            await writable.close();
+
+                            // Add to workspace if callback is available
+                            if (addFileToWorkspace) {
+                                addFileToWorkspace(handle);
+                            }
+
+                            const totalRows = sheets.reduce((sum, s) => sum + s.rows.length + (s.headers ? 1 : 0), 0);
+                            return `Successfully created spreadsheet "${handle.name}" with ${sheets.length} sheet(s) and ${totalRows} total rows. The file has been saved and added to your workspace.`;
+                        } catch (err) {
+                            // User cancelled the save dialog
+                            if ((err as Error).name === 'AbortError') {
+                                return 'File save was cancelled by the user.';
+                            }
+                            throw err;
+                        }
+                    } else {
+                        // Fallback: trigger download
+                        const url = URL.createObjectURL(blob);
+                        const link = document.createElement('a');
+                        link.href = url;
+                        link.download = finalFilename;
+                        document.body.appendChild(link);
+                        link.click();
+                        document.body.removeChild(link);
+                        URL.revokeObjectURL(url);
+
+                        const totalRows = sheets.reduce((sum, s) => sum + s.rows.length + (s.headers ? 1 : 0), 0);
+                        return `Successfully created and downloaded spreadsheet "${finalFilename}" with ${sheets.length} sheet(s) and ${totalRows} total rows. To work with this file, add it to your workspace using the file explorer.`;
+                    }
+                } catch (error) {
+                    console.error('[createSpreadsheet] Error:', error);
+                    return `Error creating spreadsheet: ${error instanceof Error ? error.message : 'Unknown error'}`;
                 }
             }
         )

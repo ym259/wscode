@@ -16,7 +16,7 @@ import Image from '@tiptap/extension-image';
 import TextAlign from '@tiptap/extension-text-align';
 
 import { DocxWriter } from '../../../lib/docx/DocxWriter';
-import { BlockIdExtension, DeleteBlockCommand, CustomParagraph, FontSize, InsertionMark, DeletionMark, CommentMark, CustomHeading } from '../extensions';
+import { BlockIdExtension, DeleteBlockCommand, CustomParagraph, FontSize, InsertionMark, DeletionMark, CommentMark, CustomHeading, CustomOrderedList } from '../extensions';
 import { Comment } from './types';
 
 interface UseCustomEditorProps {
@@ -26,9 +26,10 @@ interface UseCustomEditorProps {
 export const useCustomEditor = ({ setSelectionUpdateKey }: UseCustomEditorProps) => {
     const editor = useEditor({
         extensions: [
-            StarterKit.configure({ paragraph: false, heading: false }),
+            StarterKit.configure({ paragraph: false, heading: false, orderedList: false }),
             CustomParagraph,
             CustomHeading,
+            CustomOrderedList,
             BlockIdExtension,
             DeleteBlockCommand,
             UnderlineExtension,

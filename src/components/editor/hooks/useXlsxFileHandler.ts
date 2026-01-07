@@ -3,27 +3,10 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import * as XLSX from 'xlsx-js-style';
+import type { SheetData, CellData, CellValue } from './useFortuneSheet';
 
-interface UseXlsxFileHandlerResult {
-    saveError: string | null;
-    isSaving: boolean;
-}
-
-/**
- * Hook for xlsx file save operations.
- * Uses File System Access API when handle is available, falls back to download.
- */
-export interface SheetData {
-    name: string;
-    celldata?: Array<{
-        r: number;
-        c: number;
-        v: {
-            v?: string | number | boolean;
-            m?: string | number;
-        };
-    }>;
-}
+// Re-export SheetData for backwards compatibility
+export type { SheetData };
 
 export function useXlsxFileHandler(
     initialWorkbookRef: React.MutableRefObject<any>,
@@ -55,6 +38,9 @@ export function useXlsxFileHandler(
                     celldata.forEach(cell => {
                         const r = cell.r;
                         const c = cell.c;
+                        const v = cell.v;
+
+                        if (!v) return; // Skip null cells
 
                         // Update range
                         if (r < range.s.r) range.s.r = r;
@@ -63,7 +49,7 @@ export function useXlsxFileHandler(
                         if (c > range.e.c) range.e.c = c;
 
                         const cellRef = XLSX.utils.encode_cell({ r, c });
-                        const cellValue = cell.v?.v;
+                        const cellValue = v.v;
 
                         // Basic cell object
                         const cellObj: any = { v: cellValue };
@@ -76,10 +62,78 @@ export function useXlsxFileHandler(
                             cellObj.t = 's';
                         }
 
+                        // Preserve formula
+                        if (v.f) {
+                            cellObj.f = v.f;
+                        }
+
+                        // Preserve styles
+                        const style: any = {};
+                        if (v.bg) {
+                            style.fill = { fgColor: { rgb: v.bg.replace('#', '') } };
+                        }
+                        if (v.fc || v.bl || v.it || v.fs || v.ff || v.un || v.cl) {
+                            style.font = {};
+                            if (v.fc) style.font.color = { rgb: v.fc.replace('#', '') };
+                            if (v.bl) style.font.bold = true;
+                            if (v.it) style.font.italic = true;
+                            if (v.un) style.font.underline = true;
+                            if (v.cl) style.font.strike = true;
+                            if (v.fs) style.font.sz = v.fs;
+                            if (v.ff) style.font.name = v.ff;
+                        }
+                        if (v.ht !== undefined || v.vt !== undefined) {
+                            style.alignment = {};
+                            if (v.ht !== undefined) {
+                                const hMap: Record<number, string> = { 0: 'center', 1: 'left', 2: 'right' };
+                                style.alignment.horizontal = hMap[v.ht] || 'left';
+                            }
+                            if (v.vt !== undefined) {
+                                const vMap: Record<number, string> = { 0: 'center', 1: 'top', 2: 'bottom' };
+                                style.alignment.vertical = vMap[v.vt] || 'center';
+                            }
+                        }
+
+                        if (Object.keys(style).length > 0) {
+                            cellObj.s = style;
+                        }
+
                         worksheet[cellRef] = cellObj;
                     });
 
                     worksheet['!ref'] = XLSX.utils.encode_range(range);
+
+                    // Add merged cells config
+                    if (sheet.config?.merge) {
+                        worksheet['!merges'] = Object.values(sheet.config.merge).map(m => ({
+                            s: { r: m.r, c: m.c },
+                            e: { r: m.r + m.rs - 1, c: m.c + m.cs - 1 }
+                        }));
+                    }
+
+                    // Add column widths
+                    if (sheet.config?.columnlen) {
+                        worksheet['!cols'] = [];
+                        for (const [idx, width] of Object.entries(sheet.config.columnlen)) {
+                            const colIdx = parseInt(idx, 10);
+                            while (worksheet['!cols'].length <= colIdx) {
+                                worksheet['!cols'].push({});
+                            }
+                            worksheet['!cols'][colIdx] = { wpx: width };
+                        }
+                    }
+
+                    // Add row heights
+                    if (sheet.config?.rowlen) {
+                        worksheet['!rows'] = [];
+                        for (const [idx, height] of Object.entries(sheet.config.rowlen)) {
+                            const rowIdx = parseInt(idx, 10);
+                            while (worksheet['!rows'].length <= rowIdx) {
+                                worksheet['!rows'].push({});
+                            }
+                            worksheet['!rows'][rowIdx] = { hpx: height };
+                        }
+                    }
                 } else {
                     worksheet['!ref'] = 'A1:A1';
                 }

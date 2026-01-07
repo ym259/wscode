@@ -345,59 +345,89 @@ export default function FileExplorer({ onClose }: FileExplorerProps) {
             {/* Main Scrollable Area (Folders + Library) */}
             <div className={styles.mainArea}>
                 {/* Opened Folders */}
-                {rootItems.length > 0 ? (
-                    rootItems.map((item, index) => (
-                        <div key={item.path} className={styles.section}>
-                            <SectionHeader
-                                title={item.name.toUpperCase()}
-                                isExpanded={expandedFolders.has(item.path)}
-                                onToggle={() => toggleFolderExpand(item.path)}
-                                showBorder={index > 0}
-                                actions={
-                                    <button
-                                        className={styles.actionButton}
-                                        onClick={() => removeWorkspaceItem(item.path)}
-                                        title="Remove from Workspace"
-                                    >
-                                        <X size={14} />
-                                    </button>
-                                }
-                            />
-                            {expandedFolders.has(item.path) && (
-                                <div className={styles.sectionContent}>
-                                    {permissionStatus[item.path] === 'granted' ? (
-                                        item.type === 'directory' ? (
-                                            <FolderTree items={item.children || []} level={1} />
-                                        ) : (
-                                            <div
-                                                className={styles.item}
-                                                onClick={() => handleFileClick(item)}
-                                                style={{ paddingLeft: 26 }}
-                                            >
-                                                <FileText size={16} />
-                                                <span style={{ marginLeft: 6 }}>{item.name}</span>
-                                            </div>
-                                        )
-                                    ) : (
-                                        <div className={styles.permissionPrompt}>
-                                            <AlertCircle size={16} className={styles.warningIcon} />
-                                            <p className={styles.permissionText}>Access needed</p>
-                                            <button
-                                                className={styles.restoreButton}
-                                                onClick={() => handleRestoreAccess(item)}
-                                                disabled={isLoading}
-                                            >
-                                                {isLoading ? '...' : 'Restore'}
-                                            </button>
-                                        </div>
-                                    )}
+                {rootItems.filter(item => item.type === 'directory').map((item, index) => (
+                    <div key={item.path} className={styles.section}>
+                        <SectionHeader
+                            title={item.name.toUpperCase()}
+                            isExpanded={expandedFolders.has(item.path)}
+                            onToggle={() => toggleFolderExpand(item.path)}
+                            showBorder={index > 0}
+                            actions={
+                                <button
+                                    className={styles.actionButton}
+                                    onClick={() => removeWorkspaceItem(item.path)}
+                                    title="Remove from Workspace"
+                                >
+                                    <X size={14} />
+                                </button>
+                            }
+                        />
+                        {expandedFolders.has(item.path) && (
+                            <div className={styles.sectionContent}>
+                                {permissionStatus[item.path] === 'granted' ? (
+                                    <FolderTree items={item.children || []} level={1} />
+                                ) : (
+                                    <div className={styles.permissionPrompt}>
+                                        <AlertCircle size={16} className={styles.warningIcon} />
+                                        <p className={styles.permissionText}>Access needed</p>
+                                        <button
+                                            className={styles.restoreButton}
+                                            onClick={() => handleRestoreAccess(item)}
+                                            disabled={isLoading}
+                                        >
+                                            {isLoading ? '...' : 'Restore'}
+                                        </button>
+                                    </div>
+                                )}
+                            </div>
+                        )}
+                    </div>
+                ))}
+
+                {/* Individual Files Section */}
+                {rootItems.some(item => item.type === 'file') && (
+                    <div className={`${styles.section} ${styles.sectionWithBorder}`}>
+                        <SectionHeader
+                            title="FILES"
+                            isExpanded={true}
+                            onToggle={() => { }} // Always expanded for now, or manage state if needed
+                            showBorder={true}
+                            badge={rootItems.filter(item => item.type === 'file').length}
+                        />
+                        <div className={styles.sectionContent}>
+                            {rootItems.filter(item => item.type === 'file').map((item) => (
+                                <div
+                                    key={item.path}
+                                    className={styles.item}
+                                    style={{ paddingLeft: 26 }}
+                                    onClick={() => handleFileClick(item)}
+                                >
+                                    <FileText size={16} />
+                                    <span style={{ flex: 1, marginLeft: 6, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                        {item.name}
+                                    </span>
+                                    <div className={styles.itemActions}>
+                                        <button
+                                            className={styles.removeButton}
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                removeWorkspaceItem(item.path);
+                                            }}
+                                            title="Close File"
+                                        >
+                                            <X size={14} />
+                                        </button>
+                                    </div>
                                 </div>
-                            )}
+                            ))}
                         </div>
-                    ))
-                ) : (
+                    </div>
+                )}
+
+                {/* Empty State (only if no folders and no files) */}
+                {rootItems.length === 0 && (
                     <div className={styles.emptyState}>
-                        <p className={styles.emptyText}>No folder opened</p>
+                        <p className={styles.emptyText}>フォルダが開かれていません</p>
                         <button
                             className={styles.openButton}
                             onClick={handleAddFolder}

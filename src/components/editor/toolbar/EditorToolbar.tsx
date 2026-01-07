@@ -166,7 +166,7 @@ export const EditorToolbar: React.FC<EditorToolbarProps> = ({
                         fontSize: '13px',
                         cursor: 'pointer',
                         backgroundColor: '#fff',
-                        width: '56px',
+                        width: '64px',
                         color: '#374151',
                     }}
                     title="Font Size"

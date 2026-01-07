@@ -25,7 +25,7 @@ export function getToolsForFileType(context: ToolContext, activeFileType: FileTy
     // READ TOOLS: Always available (can read any file in workspace)
     tools.push(...getNavigationTools(context));        // readFile, keywordSearch (fast regex search)
     tools.push(...getSearchTools(context));            // semanticSearch (AI semantic search), scrollToBlock
-    tools.push(...getSpreadsheetTools(context));       // listSpreadsheetSheets
+    tools.push(...getSpreadsheetTools(context));       // listSpreadsheetSheets, createSpreadsheet
     tools.push(...getLibraryTools(context));           // readLibraryFile
     tools.push(...getPdfTools(context));               // loadPdf
 

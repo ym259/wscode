@@ -4,6 +4,7 @@
 import React, { useCallback, useRef, useEffect } from 'react';
 import { Workbook } from '@fortune-sheet/react';
 import '@fortune-sheet/react/dist/index.css';
+import { Columns, Rows, RotateCcw } from 'lucide-react';
 import styles from './XlsxEditor.module.css';
 import { useFortuneSheet } from './hooks/useFortuneSheet';
 import { useXlsxFileHandler } from './hooks/useXlsxFileHandler';
@@ -27,8 +28,40 @@ const measureTextWidth = (text: string, font: string = '11pt "Arial"'): number =
     return metrics.width;
 };
 
+// Helper to estimate text height based on content (multi-line support)
+const measureTextHeight = (text: string, colWidth: number, font: string = '11pt "Arial"'): number => {
+    const canvas = document.createElement('canvas');
+    const context = canvas.getContext('2d');
+    if (!context) return 20; // Default row height
+    context.font = font;
+    
+    // Check if text contains line breaks
+    const lines = String(text).split('\n');
+    const lineHeight = 20; // Base line height in pixels
+    
+    // Calculate wrapped lines for each line
+    let totalLines = 0;
+    for (const line of lines) {
+        const textWidth = context.measureText(line).width;
+        const wrappedLines = Math.max(1, Math.ceil(textWidth / (colWidth - 10))); // Account for padding
+        totalLines += wrappedLines;
+    }
+    
+    return Math.max(20, totalLines * lineHeight);
+};
+
 export default function XlsxEditor({ file, fileName, handle }: XlsxEditorProps) {
-    const { setAIActionHandler, rootItems, openFile, setDocumentStats, libraryItems, openTabs } = useWorkspace();
+    const { setAIActionHandler, rootItems, openFile, setDocumentStats, libraryItems, openTabs, addWorkspaceItem } = useWorkspace();
+
+    // Callback to add a newly created file to the workspace
+    const addFileToWorkspace = useCallback((fileHandle: FileSystemFileHandle) => {
+        addWorkspaceItem({
+            name: fileHandle.name,
+            path: fileHandle.name,
+            type: 'file',
+            handle: fileHandle,
+        });
+    }, [addWorkspaceItem]);
 
     // Parse xlsx and manage sheet state
     const { sheets, isReady, error: parseError, workbookRef } = useFortuneSheet(file);
@@ -36,6 +69,7 @@ export default function XlsxEditor({ file, fileName, handle }: XlsxEditorProps) 
     // Ref to Fortune-sheet Workbook instance for direct API calls
     const fortuneSheetRef = useRef<any>(null);
     const containerRef = useRef<HTMLDivElement>(null);
+
 
     // Create a stable callback for setCellValue that uses the Fortune-sheet ref
     const setCellValueViaRef = useCallback((
@@ -166,7 +200,8 @@ export default function XlsxEditor({ file, fileName, handle }: XlsxEditorProps) 
         libraryItems,
         setAIActionHandler,
         setCellValue: setCellValueViaRef,
-        openFileInEditor: openFileByPath
+        openFileInEditor: openFileByPath,
+        addFileToWorkspace
     });
 
     // Track latest sheet data for saving
@@ -352,6 +387,187 @@ export default function XlsxEditor({ file, fileName, handle }: XlsxEditorProps) 
         };
     }, [sheets]);
 
+    // Auto-fit all column widths
+    const autoFitAllColumns = useCallback(() => {
+        const workbook = fortuneSheetRef.current;
+        if (!workbook || sheets.length === 0) {
+            console.warn('[XlsxEditor] Cannot auto-fit columns: workbook or sheets not available');
+            return;
+        }
+
+        // Get active sheet data
+        let activeSheet: any = null;
+        if (typeof workbook.getSheet === 'function') {
+            try {
+                activeSheet = workbook.getSheet();
+            } catch (e) {
+                console.warn('[XlsxEditor] Could not get active sheet', e);
+            }
+        }
+
+        // Fallback to first sheet from parsed data
+        if (!activeSheet) {
+            activeSheet = sheets[0];
+        }
+
+        if (!activeSheet || !activeSheet.celldata) {
+            console.warn('[XlsxEditor] No cell data available');
+            return;
+        }
+
+        // Find all columns with data and calculate optimal widths
+        const columnWidths: Record<number, number> = {};
+        const maxCol = activeSheet.celldata.reduce((max: number, cell: any) => Math.max(max, cell.c || 0), 0);
+
+        for (let colIndex = 0; colIndex <= maxCol; colIndex++) {
+            let maxWidth = 50; // Minimum width
+
+            activeSheet.celldata.forEach((cell: any) => {
+                if (cell.c === colIndex && cell.v) {
+                    const text = String(cell.v.m || cell.v.v || '');
+                    const width = measureTextWidth(text);
+                    if (width > maxWidth) maxWidth = width;
+                }
+            });
+
+            columnWidths[colIndex] = Math.ceil(maxWidth + 20); // Add padding
+        }
+
+        console.log('[XlsxEditor] Auto-fitting all columns:', columnWidths);
+
+        if (typeof workbook.setColumnWidth === 'function') {
+            workbook.setColumnWidth(columnWidths);
+        } else {
+            console.warn('[XlsxEditor] setColumnWidth API not available');
+        }
+    }, [sheets]);
+
+    // Auto-fit all row heights
+    const autoFitAllRows = useCallback(() => {
+        const workbook = fortuneSheetRef.current;
+        if (!workbook || sheets.length === 0) {
+            console.warn('[XlsxEditor] Cannot auto-fit rows: workbook or sheets not available');
+            return;
+        }
+
+        // Get active sheet data
+        let activeSheet: any = null;
+        if (typeof workbook.getSheet === 'function') {
+            try {
+                activeSheet = workbook.getSheet();
+            } catch (e) {
+                console.warn('[XlsxEditor] Could not get active sheet', e);
+            }
+        }
+
+        // Fallback to first sheet from parsed data
+        if (!activeSheet) {
+            activeSheet = sheets[0];
+        }
+
+        if (!activeSheet || !activeSheet.celldata) {
+            console.warn('[XlsxEditor] No cell data available');
+            return;
+        }
+
+        // Get current column widths for wrap calculation
+        const columnLen = activeSheet.config?.columnlen || {};
+        const defaultColWidth = activeSheet.defaultColWidth || 73;
+
+        // Find all rows with data and calculate optimal heights
+        const rowHeights: Record<number, number> = {};
+        const maxRow = activeSheet.celldata.reduce((max: number, cell: any) => Math.max(max, cell.r || 0), 0);
+
+        for (let rowIndex = 0; rowIndex <= maxRow; rowIndex++) {
+            let maxHeight = 20; // Minimum height (default row height)
+
+            activeSheet.celldata.forEach((cell: any) => {
+                if (cell.r === rowIndex && cell.v) {
+                    const text = String(cell.v.m || cell.v.v || '');
+                    const colWidth = columnLen[cell.c] || defaultColWidth;
+                    const height = measureTextHeight(text, colWidth);
+                    if (height > maxHeight) maxHeight = height;
+                }
+            });
+
+            // Only set non-default heights to reduce API calls
+            if (maxHeight > 20) {
+                rowHeights[rowIndex] = Math.ceil(maxHeight + 4); // Add small padding
+            }
+        }
+
+        console.log('[XlsxEditor] Auto-fitting all rows:', rowHeights);
+
+        if (typeof workbook.setRowHeight === 'function') {
+            workbook.setRowHeight(rowHeights);
+        } else {
+            console.warn('[XlsxEditor] setRowHeight API not available');
+        }
+    }, [sheets]);
+
+    // Reset all column widths and row heights to defaults
+    const resetAllSizes = useCallback(() => {
+        const workbook = fortuneSheetRef.current;
+        if (!workbook || sheets.length === 0) {
+            console.warn('[XlsxEditor] Cannot reset sizes: workbook or sheets not available');
+            return;
+        }
+
+        // Get active sheet data
+        let activeSheet: any = null;
+        if (typeof workbook.getSheet === 'function') {
+            try {
+                activeSheet = workbook.getSheet();
+            } catch (e) {
+                console.warn('[XlsxEditor] Could not get active sheet', e);
+            }
+        }
+
+        // Fallback to first sheet from parsed data
+        if (!activeSheet) {
+            activeSheet = sheets[0];
+        }
+
+        if (!activeSheet || !activeSheet.celldata) {
+            console.warn('[XlsxEditor] No cell data available');
+            return;
+        }
+
+        // Default dimensions
+        const defaultColWidth = 73;
+        const defaultRowHeight = 20;
+
+        // Find max column and row with data
+        const maxCol = activeSheet.celldata.reduce((max: number, cell: any) => Math.max(max, cell.c || 0), 0);
+        const maxRow = activeSheet.celldata.reduce((max: number, cell: any) => Math.max(max, cell.r || 0), 0);
+
+        // Reset all columns to default width
+        const columnWidths: Record<number, number> = {};
+        for (let colIndex = 0; colIndex <= maxCol; colIndex++) {
+            columnWidths[colIndex] = defaultColWidth;
+        }
+
+        // Reset all rows to default height
+        const rowHeights: Record<number, number> = {};
+        for (let rowIndex = 0; rowIndex <= maxRow; rowIndex++) {
+            rowHeights[rowIndex] = defaultRowHeight;
+        }
+
+        console.log('[XlsxEditor] Resetting all sizes to defaults');
+
+        if (typeof workbook.setColumnWidth === 'function') {
+            workbook.setColumnWidth(columnWidths);
+        } else {
+            console.warn('[XlsxEditor] setColumnWidth API not available');
+        }
+
+        if (typeof workbook.setRowHeight === 'function') {
+            workbook.setRowHeight(rowHeights);
+        } else {
+            console.warn('[XlsxEditor] setRowHeight API not available');
+        }
+    }, [sheets]);
+
     // Unified error handling
     const error = parseError || saveError;
 
@@ -372,6 +588,39 @@ export default function XlsxEditor({ file, fileName, handle }: XlsxEditorProps) 
 
     return (
         <div className={styles.wrapper}>
+            {/* Custom Toolbar */}
+            {isReady && sheets.length > 0 && (
+                <div className={styles.toolbar}>
+                    <div className={styles.toolbarGroup}>
+                        <button
+                            className={styles.toolbarButton}
+                            onClick={autoFitAllColumns}
+                            title="Auto-fit all column widths"
+                        >
+                            <Columns size={16} />
+                            <span>Auto-fit Columns</span>
+                        </button>
+                        <button
+                            className={styles.toolbarButton}
+                            onClick={autoFitAllRows}
+                            title="Auto-fit all row heights"
+                        >
+                            <Rows size={16} />
+                            <span>Auto-fit Rows</span>
+                        </button>
+                        <div className={styles.toolbarDivider} />
+                        <button
+                            className={styles.toolbarButton}
+                            onClick={resetAllSizes}
+                            title="Reset all column widths and row heights to defaults"
+                        >
+                            <RotateCcw size={16} />
+                            <span>Reset Sizes</span>
+                        </button>
+                    </div>
+                </div>
+            )}
+
             <div className={`${styles.container} ${isReady ? styles.ready : ''}`}>
                 {isReady && sheets.length > 0 && (
                     <div ref={containerRef} className={styles.sheetContainer}>

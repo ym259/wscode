@@ -9,6 +9,16 @@ export class DocxReader {
     private docDefaults: any = null;
     // Track comment range positions: commentId -> { startFound: boolean, endFound: boolean }
     private activeCommentRanges: Set<string> = new Set();
+    // Numbering definitions: numId -> level definitions
+    private numberingMap: Record<string, {
+        abstractNumId: string;
+        levels: Record<number, {
+            numFmt: string;
+            lvlText: string;
+            start: number;
+            indent?: { left?: string; hanging?: string; firstLine?: string };
+        }>;
+    }> = {};
 
     constructor() {
         this.parser = new XMLParser({
@@ -28,6 +38,12 @@ export class DocxReader {
         const stylesXml = await zip.file('word/styles.xml')?.async('string');
         if (stylesXml) {
             this.parseStyles(stylesXml);
+        }
+
+        // Load Numbering (before document so we have numbering definitions ready)
+        const numberingXml = await zip.file('word/numbering.xml')?.async('string');
+        if (numberingXml) {
+            this.parseNumbering(numberingXml);
         }
 
         // Load Comments (before document so we have comment content ready)
@@ -95,9 +111,24 @@ export class DocxReader {
             if (styleId) {
                 const nameNode = style['w:name'] || style['name'];
                 const type = style['w:type'] || style['type'];
+                const pPr = style['w:pPr'] || style['pPr'];
+                let indent: any = null;
+
+                if (pPr) {
+                    const ind = pPr['w:ind'] || pPr['ind'];
+                    if (ind) {
+                        indent = {
+                            left: ind['w:left'] || ind['w:start'] || ind['left'] || ind['start'],
+                            hanging: ind['w:hanging'] || ind['hanging'],
+                            firstLine: ind['w:firstLine'] || ind['firstLine']
+                        };
+                    }
+                }
+
                 this.stylesMap[styleId] = {
                     name: nameNode?.['w:val'] || nameNode?.['val'],
-                    type: type
+                    type: type,
+                    indent
                 };
             }
         });
@@ -175,6 +206,128 @@ export class DocxReader {
         console.log('DEBUG parseComments: Final commentsMap', this.commentsMap);
     }
 
+    /**
+     * Parse numbering.xml to extract list numbering definitions
+     * This maps numId -> abstractNumId -> level definitions (format, text pattern, indent)
+     */
+    private parseNumbering(xmlContent: string) {
+        const orderlyParser = new XMLParser({
+            ignoreAttributes: false,
+            attributeNamePrefix: '',
+            removeNSPrefix: false,
+            preserveOrder: true,
+        });
+
+        const orderlyResult = orderlyParser.parse(xmlContent);
+
+        // Find numbering root element
+        const numberingRoot = orderlyResult.find((x: any) => x['w:numbering'] || x['numbering']);
+        if (!numberingRoot) return;
+
+        const numberingArray = numberingRoot['w:numbering'] || numberingRoot['numbering'] || [];
+
+        // First pass: collect abstractNum definitions
+        const abstractNumMap: Record<string, Record<number, {
+            numFmt: string;
+            lvlText: string;
+            start: number;
+            indent?: { left?: string; hanging?: string; firstLine?: string };
+        }>> = {};
+
+        numberingArray.forEach((item: any) => {
+            const key = Object.keys(item)[0];
+
+            // Parse abstractNum definitions
+            if (key === 'w:abstractNum' || key === 'abstractNum') {
+                const abstractNumContent = item[key];
+                const attrs = item[':@'] || {};
+                const abstractNumId = attrs['w:abstractNumId'] || attrs['abstractNumId'];
+
+                if (!abstractNumId) return;
+
+                const levels: Record<number, any> = {};
+
+                abstractNumContent.forEach((lvlItem: any) => {
+                    const lvlKey = Object.keys(lvlItem)[0];
+                    if (lvlKey === 'w:lvl' || lvlKey === 'lvl') {
+                        const lvlContent = lvlItem[lvlKey];
+                        const lvlAttrs = lvlItem[':@'] || {};
+                        const ilvl = parseInt(lvlAttrs['w:ilvl'] || lvlAttrs['ilvl'] || '0');
+
+                        const levelDef: any = {
+                            numFmt: 'decimal',
+                            lvlText: '%1.',
+                            start: 1
+                        };
+
+                        lvlContent.forEach((prop: any) => {
+                            const propKey = Object.keys(prop)[0];
+                            const propAttrs = prop[':@'] || {};
+
+                            if (propKey === 'w:numFmt' || propKey === 'numFmt') {
+                                levelDef.numFmt = propAttrs['w:val'] || propAttrs['val'] || 'decimal';
+                            }
+                            if (propKey === 'w:lvlText' || propKey === 'lvlText') {
+                                levelDef.lvlText = propAttrs['w:val'] || propAttrs['val'] || '%1.';
+                            }
+                            if (propKey === 'w:start' || propKey === 'start') {
+                                levelDef.start = parseInt(propAttrs['w:val'] || propAttrs['val'] || '1');
+                            }
+                            if (propKey === 'w:pPr' || propKey === 'pPr') {
+                                const pPrContent = prop[propKey];
+                                pPrContent.forEach((pPrItem: any) => {
+                                    const pPrKey = Object.keys(pPrItem)[0];
+                                    if (pPrKey === 'w:ind' || pPrKey === 'ind') {
+                                        const indAttrs = pPrItem[':@'] || {};
+                                        levelDef.indent = {
+                                            left: indAttrs['w:left'] || indAttrs['left'],
+                                            hanging: indAttrs['w:hanging'] || indAttrs['hanging'],
+                                            firstLine: indAttrs['w:firstLine'] || indAttrs['firstLine']
+                                        };
+                                    }
+                                });
+                            }
+                        });
+
+                        levels[ilvl] = levelDef;
+                    }
+                });
+
+                abstractNumMap[abstractNumId] = levels;
+            }
+        });
+
+        // Second pass: map numId -> abstractNumId
+        numberingArray.forEach((item: any) => {
+            const key = Object.keys(item)[0];
+
+            if (key === 'w:num' || key === 'num') {
+                const numContent = item[key];
+                const attrs = item[':@'] || {};
+                const numId = attrs['w:numId'] || attrs['numId'];
+
+                if (!numId) return;
+
+                let abstractNumId: string | null = null;
+
+                numContent.forEach((prop: any) => {
+                    const propKey = Object.keys(prop)[0];
+                    if (propKey === 'w:abstractNumId' || propKey === 'abstractNumId') {
+                        const propAttrs = prop[':@'] || {};
+                        abstractNumId = propAttrs['w:val'] || propAttrs['val'];
+                    }
+                });
+
+                if (abstractNumId && abstractNumMap[abstractNumId]) {
+                    this.numberingMap[numId] = {
+                        abstractNumId,
+                        levels: abstractNumMap[abstractNumId]
+                    };
+                }
+            }
+        });
+    }
+
     private parseDocument(xmlContent: string) {
         // Use orderly parser for valid flow
         const orderlyParser = new XMLParser({
@@ -224,8 +377,9 @@ export class DocxReader {
         // Previously this was: filteredChildren = rawChildren.filter(...)
         // which caused paragraphs and their spacing to be lost.
 
-        // Group consecutive list items into list structures
-        const children = this.groupListItems(rawChildren);
+        // Process list paragraphs: attach numbering metadata and compute counter values
+        // (Do NOT wrap in ol/ul - render as paragraphs with CSS counters)
+        const children = this.processListParagraphs(rawChildren);
 
         const result: any = {
             type: 'doc',
@@ -314,13 +468,15 @@ export class DocxReader {
 
         for (const item of items) {
             if (item.listInfo) {
-                const { numId, ilvl, isOrdered } = item.listInfo;
+                const { numId, ilvl, isOrdered, numFmt, lvlText, numIndent } = item.listInfo;
 
                 trackListItem(numId, ilvl);
                 const currentCount = listTracker[`${numId}-${ilvl}`];
                 const startAttr = currentCount > 1 ? { start: currentCount } : {};
+                // Include numFmt and lvlText for CSS styling
+                const formatAttrs = numFmt ? { numFmt, lvlText } : {};
+                const indentAttrs = numIndent ? { numIndent } : {};
 
-                // If this is a deeper level, we need to nest
                 if (listStack.length > 0) {
                     const currentStackTop = listStack[listStack.length - 1];
 
@@ -328,9 +484,35 @@ export class DocxReader {
                         // Going deeper - create nested list inside the last list item
                         const parentItem = getParentListItem();
                         if (parentItem) {
+                            // PRIORITIZE PARAGRAPH INDENT OVER NUMBERING INDENT
+                            // If the item has explicit indentation, use it for the list structure
+                            let overrideIndent = item.attrs.indent ? {
+                                left: item.attrs.indent,
+                                hanging: item.attrs.hanging,
+                                firstLine: item.attrs.firstLine
+                            } : null;
+
+                            // Fallback to style-defined indentation if direct indent is missing
+                            if (!overrideIndent && item.attrs.styleId) {
+                                const styleDef = this.stylesMap[item.attrs.styleId];
+                                if (styleDef && styleDef.indent) {
+                                    overrideIndent = styleDef.indent;
+                                }
+                            }
+
+                            const finalIndentAttrs = overrideIndent ? { numIndent: overrideIndent } : indentAttrs;
+
+                            // If we used the paragraph indent for the list, remove it from the item to prevent double indentation
+                            // Note: We only delete if it was a direct attribute. If it came from style, it's not on item.attrs anyway.
+                            if (item.attrs.indent) {
+                                delete item.attrs.indent;
+                                delete item.attrs.hanging;
+                                delete item.attrs.firstLine;
+                            }
+
                             const newList = {
                                 type: isOrdered ? 'orderedList' : 'bulletList',
-                                attrs: { originalNumId: numId, level: ilvl, ...startAttr },
+                                attrs: { originalNumId: numId, level: ilvl, ...startAttr, ...formatAttrs, ...finalIndentAttrs },
                                 content: []
                             };
                             parentItem.content.push(newList);
@@ -342,9 +524,31 @@ export class DocxReader {
 
                         // If we don't have a list at this level, create one
                         if (listStack.length === 0 || listStack[listStack.length - 1].ilvl !== ilvl) {
+                            // PRIORITIZE PARAGRAPH INDENT OVER NUMBERING INDENT
+                            let overrideIndent = item.attrs.indent ? {
+                                left: item.attrs.indent,
+                                hanging: item.attrs.hanging,
+                                firstLine: item.attrs.firstLine
+                            } : null;
+
+                            if (!overrideIndent && item.attrs.styleId) {
+                                const styleDef = this.stylesMap[item.attrs.styleId];
+                                if (styleDef && styleDef.indent) {
+                                    overrideIndent = styleDef.indent;
+                                }
+                            }
+
+                            const finalIndentAttrs = overrideIndent ? { numIndent: overrideIndent } : indentAttrs;
+
+                            if (item.attrs.indent) {
+                                delete item.attrs.indent;
+                                delete item.attrs.hanging;
+                                delete item.attrs.firstLine;
+                            }
+
                             const newList = {
                                 type: isOrdered ? 'orderedList' : 'bulletList',
-                                attrs: { originalNumId: numId, level: ilvl, ...startAttr },
+                                attrs: { originalNumId: numId, level: ilvl, ...startAttr, ...formatAttrs, ...finalIndentAttrs },
                                 content: []
                             };
                             if (listStack.length === 0) {
@@ -360,9 +564,32 @@ export class DocxReader {
                     } else if (currentStackTop.numId !== numId) {
                         // Same level but different list - close current and start new
                         closeListsAboveLevel(ilvl);
+
+                        // PRIORITIZE PARAGRAPH INDENT OVER NUMBERING INDENT
+                        let overrideIndent = item.attrs.indent ? {
+                            left: item.attrs.indent,
+                            hanging: item.attrs.hanging,
+                            firstLine: item.attrs.firstLine
+                        } : null;
+
+                        if (!overrideIndent && item.attrs.styleId) {
+                            const styleDef = this.stylesMap[item.attrs.styleId];
+                            if (styleDef && styleDef.indent) {
+                                overrideIndent = styleDef.indent;
+                            }
+                        }
+
+                        const finalIndentAttrs = overrideIndent ? { numIndent: overrideIndent } : indentAttrs;
+
+                        if (item.attrs.indent) {
+                            delete item.attrs.indent;
+                            delete item.attrs.hanging;
+                            delete item.attrs.firstLine;
+                        }
+
                         const newList = {
                             type: isOrdered ? 'orderedList' : 'bulletList',
-                            attrs: { originalNumId: numId, level: ilvl, ...startAttr },
+                            attrs: { originalNumId: numId, level: ilvl, ...startAttr, ...formatAttrs, ...finalIndentAttrs },
                             content: []
                         };
                         if (listStack.length === 0) {
@@ -376,11 +603,47 @@ export class DocxReader {
                         listStack.push({ list: newList, ilvl, numId });
                     }
                     // else: same level, same numId - continue adding to current list
+                    else {
+                        // Even for existing lists, we should strip the paragraph indent if it matches the list indent
+                        // to avoid double indentation. Ideally, we would update the list indent if this item differs,
+                        // but HTML lists can only have one indent.
+                        // For now, if the item has indent, we remove it assuming the list handles it.
+                        // CAUTION: If this item *different* indent than the list, removing it forces it to match the list.
+                        // This corresponds to the user-approved trade-off.
+                        if (item.attrs.indent) {
+                            delete item.attrs.indent;
+                            delete item.attrs.hanging;
+                            delete item.attrs.firstLine;
+                        }
+                    }
                 } else {
                     // No active list - start a new one at root level
+
+                    // PRIORITIZE PARAGRAPH INDENT OVER NUMBERING INDENT
+                    let overrideIndent = item.attrs.indent ? {
+                        left: item.attrs.indent,
+                        hanging: item.attrs.hanging,
+                        firstLine: item.attrs.firstLine
+                    } : null;
+
+                    if (!overrideIndent && item.attrs.styleId) {
+                        const styleDef = this.stylesMap[item.attrs.styleId];
+                        if (styleDef && styleDef.indent) {
+                            overrideIndent = styleDef.indent;
+                        }
+                    }
+
+                    const finalIndentAttrs = overrideIndent ? { numIndent: overrideIndent } : indentAttrs;
+
+                    if (item.attrs.indent) {
+                        delete item.attrs.indent;
+                        delete item.attrs.hanging;
+                        delete item.attrs.firstLine;
+                    }
+
                     const newList = {
                         type: isOrdered ? 'orderedList' : 'bulletList',
-                        attrs: { originalNumId: numId, ...startAttr },
+                        attrs: { originalNumId: numId, ...startAttr, ...formatAttrs, ...finalIndentAttrs },
                         content: []
                     };
                     result.push(newList);
@@ -408,6 +671,148 @@ export class DocxReader {
             }
         }
 
+        return result;
+    }
+
+    /**
+     * Process list paragraphs: attach numbering metadata and compute counter values.
+     * Instead of wrapping in ol/ul, we keep paragraphs and use CSS counters for rendering.
+     * This matches how Word internally handles list items (as styled paragraphs).
+     */
+    private processListParagraphs(items: any[]): any[] {
+        // Counter tracker: numId -> ilvl -> current count
+        const counterState: Record<string, Record<number, number>> = {};
+
+        // Reset tracker: when we encounter a non-list item, reset counters for lists that have ended
+        const activeNumIds = new Set<string>();
+
+        const result: any[] = [];
+
+        for (const item of items) {
+            if (item.listInfo) {
+                const { numId, ilvl, isOrdered, numFmt, lvlText, numIndent } = item.listInfo;
+
+                // Initialize counter state for this numId if needed
+                if (!counterState[numId]) {
+                    counterState[numId] = {};
+                }
+
+                // Reset deeper levels when going back up
+                for (const key of Object.keys(counterState[numId])) {
+                    const level = parseInt(key);
+                    if (level > ilvl) {
+                        delete counterState[numId][level];
+                    }
+                }
+
+                // Increment counter for this level
+                counterState[numId][ilvl] = (counterState[numId][ilvl] || 0) + 1;
+                const counterValue = counterState[numId][ilvl];
+
+                activeNumIds.add(numId);
+
+                // Generate the full marker text for special formats
+                const markerText = this.generateMarkerText(numFmt || 'decimal', lvlText, counterValue);
+
+                // Create paragraph with numbering metadata (no listItem wrapper)
+                const paragraph = {
+                    type: 'paragraph',
+                    attrs: {
+                        ...item.attrs,
+                        // Numbering metadata
+                        listNumId: numId,
+                        listIlvl: ilvl,
+                        listIsOrdered: isOrdered,
+                        listNumFmt: numFmt || 'decimal',
+                        listLvlText: lvlText,
+                        listCounterValue: counterValue,
+                        listMarkerText: markerText, // Pre-rendered marker for CSS content
+                        // Indentation from numbering definition
+                        listIndentLeft: numIndent?.left,
+                        listIndentHanging: numIndent?.hanging,
+                    },
+                    content: item.content
+                };
+
+                result.push(paragraph);
+
+                // Remove the temporary listInfo property
+                delete item.listInfo;
+            } else {
+                // Non-list item - just pass through
+                result.push(item);
+            }
+        }
+
+        return result;
+    }
+
+    /**
+     * Generate the full marker text for a list item.
+     * Handles special formats like ideographTraditional (甲乙丙丁) that CSS can't generate.
+     */
+    private generateMarkerText(numFmt: string, lvlText: string | undefined, counterValue: number): string {
+        // Heavenly Stems (天干) for ideographTraditional: 甲乙丙丁戊己庚辛壬癸
+        const heavenlyStems = ['甲', '乙', '丙', '丁', '戊', '己', '庚', '辛', '壬', '癸'];
+
+        // Earthly Branches (地支) for some other formats: 子丑寅卯辰巳午未申酉戌亥
+        // const earthlyBranches = ['子', '丑', '寅', '卯', '辰', '巳', '午', '未', '申', '酉', '戌', '亥'];
+
+        let baseMarker: string;
+
+        switch (numFmt) {
+            case 'ideographTraditional':
+                // Use Heavenly Stems: 甲, 乙, 丙, 丁, 戊, 己, 庚, 辛, 壬, 癸
+                baseMarker = heavenlyStems[(counterValue - 1) % heavenlyStems.length] || String(counterValue);
+                break;
+            case 'upperRoman':
+                baseMarker = this.toRoman(counterValue).toUpperCase();
+                break;
+            case 'lowerRoman':
+                baseMarker = this.toRoman(counterValue).toLowerCase();
+                break;
+            case 'upperLetter':
+                baseMarker = String.fromCharCode(64 + ((counterValue - 1) % 26) + 1);
+                break;
+            case 'lowerLetter':
+                baseMarker = String.fromCharCode(96 + ((counterValue - 1) % 26) + 1);
+                break;
+            case 'decimalFullWidth':
+                // Convert to full-width digits: １２３４５
+                baseMarker = String(counterValue).split('').map(d => String.fromCharCode(0xFF10 + parseInt(d))).join('');
+                break;
+            case 'decimal':
+            default:
+                baseMarker = String(counterValue);
+                break;
+        }
+
+        // Apply lvlText template if present
+        if (lvlText) {
+            // Replace %1, %2, etc. with the marker value
+            // For now, just handle %1 (single level)
+            return lvlText.replace(/%1/g, baseMarker);
+        }
+
+        return baseMarker;
+    }
+
+    /**
+     * Convert number to Roman numerals
+     */
+    private toRoman(num: number): string {
+        const romanNumerals: [number, string][] = [
+            [1000, 'm'], [900, 'cm'], [500, 'd'], [400, 'cd'],
+            [100, 'c'], [90, 'xc'], [50, 'l'], [40, 'xl'],
+            [10, 'x'], [9, 'ix'], [5, 'v'], [4, 'iv'], [1, 'i']
+        ];
+        let result = '';
+        for (const [value, numeral] of romanNumerals) {
+            while (num >= value) {
+                result += numeral;
+                num -= value;
+            }
+        }
         return result;
     }
 
@@ -476,7 +881,16 @@ export class DocxReader {
         const activeCommentIds: string[] = [];
         let hasPageBreak = false;
         // Paragraph default run properties (from w:pPr/w:rPr)
+        // Initialize with document-level defaults from docDefaults
         const paragraphDefaults: { fontSize?: string; fontFamily?: string } = {};
+
+        // Apply document default font size if available (w:sz value in half-points)
+        if (this.docDefaults?.sz) {
+            const szVal = this.docDefaults.sz['w:val'] || this.docDefaults.sz['val'];
+            if (szVal) {
+                paragraphDefaults.fontSize = `${parseInt(szVal) / 2}pt`;
+            }
+        }
 
         // First pass: extract paragraph defaults from w:pPr/w:rPr
         nodeContent.forEach(item => {
@@ -569,12 +983,25 @@ export class DocxReader {
                         });
 
                         if (numId) {
-                            // Note: For now, treat all lists as ordered (numbered)
-                            // A full implementation would need to parse numbering.xml to determine bullet vs number
+                            // Look up numbering definitions for proper format
+                            const numDef = this.numberingMap[numId];
+                            const level = parseInt(ilvl);
+                            const levelDef = numDef?.levels?.[level];
+
+                            // Determine if ordered based on numFmt
+                            const numFmt = levelDef?.numFmt || 'decimal';
+                            const isOrdered = numFmt !== 'bullet' && numFmt !== 'none';
+
                             attrs.listInfo = {
                                 numId,
-                                ilvl: parseInt(ilvl),
-                                isOrdered: true // Default to ordered; could be determined from numbering definitions
+                                ilvl: level,
+                                isOrdered,
+                                // Include numbering format details for rendering
+                                numFmt: levelDef?.numFmt,
+                                lvlText: levelDef?.lvlText,
+                                start: levelDef?.start,
+                                // Include indent from numbering definition if not overridden
+                                numIndent: levelDef?.indent
                             };
                         }
                     }
