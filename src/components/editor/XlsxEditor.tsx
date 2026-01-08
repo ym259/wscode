@@ -4,7 +4,7 @@
 import React, { useCallback, useRef, useEffect } from 'react';
 import { Workbook } from '@fortune-sheet/react';
 import '@fortune-sheet/react/dist/index.css';
-import { Columns, Rows, RotateCcw } from 'lucide-react';
+import { Columns, Rows, RotateCcw, Image as ImageIcon } from 'lucide-react';
 import styles from './XlsxEditor.module.css';
 import { useFortuneSheet } from './hooks/useFortuneSheet';
 import { useXlsxFileHandler } from './hooks/useXlsxFileHandler';
@@ -34,11 +34,11 @@ const measureTextHeight = (text: string, colWidth: number, font: string = '11pt 
     const context = canvas.getContext('2d');
     if (!context) return 20; // Default row height
     context.font = font;
-    
+
     // Check if text contains line breaks
     const lines = String(text).split('\n');
     const lineHeight = 20; // Base line height in pixels
-    
+
     // Calculate wrapped lines for each line
     let totalLines = 0;
     for (const line of lines) {
@@ -46,7 +46,7 @@ const measureTextHeight = (text: string, colWidth: number, font: string = '11pt 
         const wrappedLines = Math.max(1, Math.ceil(textWidth / (colWidth - 10))); // Account for padding
         totalLines += wrappedLines;
     }
-    
+
     return Math.max(20, totalLines * lineHeight);
 };
 
@@ -201,7 +201,8 @@ export default function XlsxEditor({ file, fileName, handle }: XlsxEditorProps) 
         setAIActionHandler,
         setCellValue: setCellValueViaRef,
         openFileInEditor: openFileByPath,
-        addFileToWorkspace
+        addFileToWorkspace,
+        getWorkbook: () => workbookRef.current
     });
 
     // Track latest sheet data for saving
@@ -568,6 +569,305 @@ export default function XlsxEditor({ file, fileName, handle }: XlsxEditorProps) 
         }
     }, [sheets]);
 
+    // Test Image Generation
+    const testImageGeneration = useCallback(async () => {
+        if (sheets.length === 0) return;
+
+        console.log('[XlsxEditor] Testing image generation (Overflow support)...');
+        const sheet = sheets[0] as any;
+        const config = sheet.config || {};
+        const celldata = sheet.celldata || [];
+        const mergeConf = config.merge || {};
+        const columnLen = config.columnlen || {};
+        const rowLen = config.rowlen || {};
+
+        // Settings
+        const defaultColWidth = 73;
+        const defaultRowHeight = 20;
+        const padding = 2;
+        const headerBg = '#f4f5f8';
+        const borderColor = '#d4d4d4';
+
+        // 1. Calculate Bounds (Data vs Config)
+        let maxRow = 0;
+        let maxCol = 0;
+
+        // Check data
+        celldata.forEach((c: any) => {
+            if (c.r > maxRow) maxRow = c.r;
+            if (c.c > maxCol) maxCol = c.c;
+        });
+
+        // Check config (column width settings often imply used area)
+        Object.keys(columnLen).forEach(k => {
+            const idx = parseInt(k, 10);
+            if (!isNaN(idx) && idx > maxCol) maxCol = idx;
+        });
+        Object.keys(rowLen).forEach(k => {
+            const idx = parseInt(k, 10);
+            if (!isNaN(idx) && idx > maxRow) maxRow = idx;
+        });
+
+        // Limits - increased to 100 cols / 200 rows or max+5
+        const rowsToRender = Math.min(Math.max(maxRow + 5, 50), 300);
+        const colsToRender = Math.min(Math.max(maxCol + 5, 20), 100);
+
+        const rowHeaderWidth = 80;
+        const colHeaderHeight = 32;
+
+        // Helper: Accessors with safe types
+        const getColWidth = (c: number): number => {
+            const w = columnLen[c]; // might be string or number
+            return w ? parseFloat(String(w)) : defaultColWidth;
+        };
+        const getRowHeight = (r: number): number => {
+            const h = rowLen[r];
+            return h ? parseFloat(String(h)) : defaultRowHeight;
+        };
+
+        // Calculate cumulative positions
+        let totalWidth = rowHeaderWidth;
+        const colPositions = [rowHeaderWidth];
+        const colWidthsCache: number[] = [];
+        for (let c = 0; c < colsToRender; c++) {
+            const w = getColWidth(c);
+            colWidthsCache[c] = w;
+            totalWidth += w;
+            colPositions.push(totalWidth);
+        }
+
+        let totalHeight = colHeaderHeight;
+        const rowPositions = [colHeaderHeight];
+        const rowHeightsCache: number[] = [];
+        for (let r = 0; r < rowsToRender; r++) {
+            const h = getRowHeight(r);
+            rowHeightsCache[r] = h;
+            totalHeight += h;
+            rowPositions.push(totalHeight);
+        }
+
+        const canvas = document.createElement('canvas');
+        const dpr = window.devicePixelRatio || 1;
+
+        // Safety cap for extremely large canvases
+        const MAX_DIM = 8000;
+        if (totalWidth * dpr > MAX_DIM || totalHeight * dpr > MAX_DIM) {
+            console.warn('[XlsxEditor] Canvas too large, clamping.');
+            // This is just a test tool, so we won't implement complex tiling
+        }
+
+        canvas.width = totalWidth * dpr;
+        canvas.height = totalHeight * dpr;
+        canvas.style.width = `${totalWidth}px`;
+        canvas.style.height = `${totalHeight}px`;
+
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return;
+
+        ctx.scale(dpr, dpr);
+        ctx.fillStyle = 'white';
+        ctx.fillRect(0, 0, totalWidth, totalHeight);
+
+        // --- DRAWING ---
+
+        // 2. Grid Lines & Headers
+        ctx.lineWidth = 1;
+
+        // Pass 1: Backgrounds & Borders
+
+        // Column Headers Background
+        for (let c = 0; c < colsToRender; c++) {
+            const x = colPositions[c];
+            const w = colWidthsCache[c];
+            ctx.fillStyle = headerBg;
+            ctx.fillRect(x, 0, w, colHeaderHeight);
+            ctx.strokeStyle = borderColor;
+            ctx.strokeRect(x - 0.5, 0 - 0.5, w + 1, colHeaderHeight + 1);
+        }
+
+        // Row Headers Background & Vertical Grid Lines
+        for (let r = 0; r < rowsToRender; r++) {
+            const y = rowPositions[r];
+            const h = rowHeightsCache[r];
+
+            // Header Background
+            ctx.fillStyle = headerBg;
+            ctx.fillRect(0, y, rowHeaderWidth, h);
+            ctx.strokeStyle = borderColor;
+            ctx.strokeRect(0, y, rowHeaderWidth, h);
+
+            // Cells Grid
+            for (let c = 0; c < colsToRender; c++) {
+                const x = colPositions[c];
+                const w = colWidthsCache[c];
+                ctx.strokeStyle = borderColor;
+                ctx.strokeRect(x, y, w, h);
+            }
+        }
+
+        // Pass 2: Header Text (On Top, allowing overflow)
+        ctx.fillStyle = '#666';
+        ctx.font = 'bold 16px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+
+        // Column Labels
+        for (let c = 0; c < colsToRender; c++) {
+            // Sparse indexing: every 5 columns
+            if (c % 5 === 0) {
+                const x = colPositions[c];
+                const w = colWidthsCache[c];
+
+                let label = '';
+                let temp = c;
+                do {
+                    label = String.fromCharCode((temp % 26) + 65) + label;
+                    temp = Math.floor(temp / 26) - 1;
+                } while (temp >= 0);
+
+                ctx.fillText(label, x + (w / 2), colHeaderHeight / 2);
+            }
+        }
+
+        // Row Labels
+        for (let r = 0; r < rowsToRender; r++) {
+            // Sparse indexing: every 5 rows
+            if (r % 5 === 0) {
+                const y = rowPositions[r];
+                const h = rowHeightsCache[r];
+                ctx.fillText(String(r + 1), rowHeaderWidth / 2, y + (h / 2));
+            }
+        }
+
+        // 3. Merged Cells (Background clearing)
+        const getMergeRange = (r: number, c: number) => {
+            const key = `${r}_${c}`;
+            return mergeConf[key] || null;
+        };
+
+        Object.keys(mergeConf).forEach(key => {
+            const merge = mergeConf[key];
+            const r = merge.r;
+            const c = merge.c;
+
+            if (r >= rowsToRender || c >= colsToRender) return;
+
+            const x = colPositions[c];
+            const y = rowPositions[r];
+            let w = 0;
+            let h = 0;
+
+            for (let i = 0; i < merge.cs; i++) w += (colWidthsCache[c + i] || defaultColWidth);
+            for (let i = 0; i < merge.rs; i++) h += (rowHeightsCache[r + i] || defaultRowHeight);
+
+            // Clear grid lines
+            ctx.fillStyle = 'white';
+            ctx.fillRect(x + 1, y + 1, w - 2, h - 2);
+            // Optional: Draw border around merge? Xlsx usually doesn't enforce thick border unless styled
+        });
+
+        // 4. Content with Overflow
+        // To handle overflow:
+        // Identify if a cell has content. 
+        // If it's a merge, draw strictly in merge bounds.
+        // If it's a normal cell, check neighbors to the right.
+
+        const cellMap = new Map<string, any>();
+        celldata.forEach((c: any) => cellMap.set(`${c.r}_${c.c}`, c));
+
+        const isCellEmpty = (r: number, c: number) => {
+            if (c >= colsToRender) return false; // Stop at edge
+            const cell = cellMap.get(`${r}_${c}`);
+            const val = cell?.v?.m || cell?.v?.v;
+            return !val; // Empty if no value
+        };
+
+        celldata.forEach((cell: any) => {
+            const { r, c } = cell;
+            if (r >= rowsToRender || c >= colsToRender) return;
+
+            const val = cell?.v?.m || cell?.v?.v || '';
+            if (!val) return; // Skip empty cells (handling overflow from others is separate? No, we iterate source)
+
+            const merge = getMergeRange(r, c);
+
+            const x = colPositions[c];
+            const y = rowPositions[r];
+            let w = colWidthsCache[c];
+            let h = rowHeightsCache[r];
+
+            if (merge) {
+                // Calculation dimensions again
+                w = 0; h = 0;
+                for (let i = 0; i < merge.cs; i++) w += (colWidthsCache[c + i] || defaultColWidth);
+                for (let i = 0; i < merge.rs; i++) h += (rowHeightsCache[r + i] || defaultRowHeight);
+            } else {
+                // Not a merge top-left.
+                // Check if we are inside someone else's merge?
+                // Logic: A simplified "is cell inside merge" is hard without 2D array.
+                // But overflow usually only happens if NOT merged.
+                // We'll perform a quick check: do we overflow?
+
+                // Calculate overflow width
+                // Look ahead 
+                let extraWidth = 0;
+                let nextC = c + 1;
+                while (nextC < colsToRender && isCellEmpty(r, nextC)) {
+                    // Also check if nextC is part of a merge? (Too complex for now, assume empty = free)
+                    extraWidth += colWidthsCache[nextC];
+                    nextC++;
+                    // Cap overflow to avoiding massive loops
+                    if (nextC > c + 10) break;
+                }
+
+                if (extraWidth > 0) {
+                    w += extraWidth;
+                }
+            }
+
+            // Draw content
+            ctx.fillStyle = '#000';
+            ctx.font = '11pt Arial';
+            ctx.textBaseline = 'middle';
+            ctx.textAlign = 'left';
+
+            const textX = x + padding;
+            const textY = y + (h / 2);
+
+            // Clip to allocated space (cell + overflow)
+            ctx.save();
+            ctx.beginPath();
+            ctx.rect(x, y, w, h);
+            ctx.clip();
+            ctx.fillText(String(val), textX, textY);
+            ctx.restore();
+        });
+
+        try {
+            const dataUrl = canvas.toDataURL('image/png');
+            console.log(`[XlsxEditor] Generated: ${canvas.width}x${canvas.height} (DPR ${dpr})`);
+
+            const win = window.open();
+            if (win) {
+                win.document.write(`
+                    <html>
+                    <head><title>Generated Image Test</title></head>
+                    <body style="background: #f0f0f0; padding: 20px;">
+                        <h3>Generated Image (${canvas.width}x${canvas.height})</h3>
+                        <div style="margin-bottom: 10px; color: #666;">
+                            Includes: ${colsToRender} cols, ${rowsToRender} rows. Overflow support active.
+                        </div>
+                        <img src="${dataUrl}" style="box-shadow: 0 4px 12px rgba(0,0,0,0.1); border: 1px solid #ddd; max-width: 100%;" />
+                    </body>
+                    </html>
+                `);
+            }
+        } catch (err) {
+            console.error('[XlsxEditor] Test failed:', err);
+            alert('Image generation failed: ' + String(err));
+        }
+    }, [sheets]);
+
     // Unified error handling
     const error = parseError || saveError;
 
@@ -616,6 +916,15 @@ export default function XlsxEditor({ file, fileName, handle }: XlsxEditorProps) 
                         >
                             <RotateCcw size={16} />
                             <span>Reset Sizes</span>
+                        </button>
+                        <div className={styles.toolbarDivider} />
+                        <button
+                            className={styles.toolbarButton}
+                            onClick={testImageGeneration}
+                            title="Debug: Test Image Generation"
+                        >
+                            <ImageIcon size={16} />
+                            <span>Test Image</span>
                         </button>
                     </div>
                 </div>

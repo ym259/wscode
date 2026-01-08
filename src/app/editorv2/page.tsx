@@ -92,14 +92,14 @@ function EditorV2Content() {
         async function loadSampleFile() {
             try {
                 // Fetch the sample DOCX file from public folder
-                const response = await fetch('/sample-docs/（サンプル）相手方準備書面.docx');
+                const response = await fetch('/sample-docs/test5.docx');
                 if (!response.ok) {
                     throw new Error('Failed to load sample file');
                 }
                 const blob = await response.blob();
                 const sampleFile = new File(
                     [blob],
-                    '（サンプル）相手方準備書面.docx',
+                    'test5.docx',
                     { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' }
                 );
                 setFile(sampleFile);

@@ -18,7 +18,8 @@ export type AIActionHandler = (
     prompt: string,
     history: ChatMessage[],
     onUpdate: (event: AgentEvent) => void,
-    images?: string[]
+    images?: string[],
+    attachments?: import('@/types').Attachment[]
 ) => Promise<void>;
 
 // Type for voice tool handler (executes individual tools by name)

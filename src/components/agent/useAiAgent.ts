@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect } from 'react';
-import { ToolCall, MessageItem, ChatMessage } from '@/types';
+import { ToolCall, MessageItem, ChatMessage, Attachment } from '@/types';
 
 interface UseAiAgentOptions {
     agentMessages: ChatMessage[];
@@ -9,7 +9,8 @@ interface UseAiAgentOptions {
         prompt: string,
         history: ChatMessage[],
         onEvent: (event: import('@/types').AgentEvent) => void,
-        images?: string[]
+        images?: string[],
+        attachments?: Attachment[]
     ) => Promise<void>;
     voiceToolHandler?: (name: string, args: Record<string, unknown>) => Promise<string>;
     scrollToBottom: () => void;
@@ -22,13 +23,16 @@ interface UseAiAgentReturn {
     setInputValue: (value: string) => void;
     selectedImages: string[];
     setSelectedImages: React.Dispatch<React.SetStateAction<string[]>>;
+    attachments: Attachment[];
+    setAttachments: React.Dispatch<React.SetStateAction<Attachment[]>>;
     attachedLibraryFiles: string[];
     setAttachedLibraryFiles: React.Dispatch<React.SetStateAction<string[]>>;
     isLoading: boolean;
     isStreaming: boolean;
     streamingMsgId: string | null;
     handleSubmit: (e?: React.FormEvent, messageOverride?: string) => Promise<void>;
-    executeAiAction: (userMessage: string, history: ChatMessage[], images?: string[]) => Promise<void>;
+    executeAiAction: (userMessage: string, history: ChatMessage[], images?: string[], attachments?: Attachment[]) => Promise<void>;
+    uploadFile: (file: File) => Promise<string>;
 }
 
 /**
@@ -37,6 +41,7 @@ interface UseAiAgentReturn {
  * - Tool call processing
  * - Form submission
  * - Image attachment handling
+ * - File upload handling
  */
 export function useAiAgent({
     agentMessages,
@@ -48,8 +53,52 @@ export function useAiAgent({
     agentInputOverride,
     setAgentInputOverride,
 }: UseAiAgentOptions): UseAiAgentReturn {
+    // Helper to upload file to backend to get file_id
+    const uploadFile = async (file: File): Promise<string> => {
+        const formData = new FormData();
+        formData.append('file', file);
+        formData.append('purpose', 'assistants');
+
+        const response = await fetch('/api/ai/files', {
+            method: 'POST',
+            body: formData,
+        });
+
+        if (!response.ok) {
+            throw new Error('Failed to upload file');
+        }
+
+        const data = await response.json();
+        return data.id;
+    };
+
+    return useAiAgentHook({
+        agentMessages,
+        addMessage,
+        updateMessage,
+        aiActionHandler,
+        voiceToolHandler,
+        scrollToBottom,
+        agentInputOverride,
+        setAgentInputOverride,
+        uploadFile
+    });
+}
+
+function useAiAgentHook({
+    agentMessages,
+    addMessage,
+    updateMessage,
+    aiActionHandler,
+    voiceToolHandler,
+    scrollToBottom,
+    agentInputOverride,
+    setAgentInputOverride,
+    uploadFile
+}: UseAiAgentOptions & { uploadFile: (file: File) => Promise<string> }): UseAiAgentReturn {
     const [inputValue, setInputValue] = useState('');
     const [selectedImages, setSelectedImages] = useState<string[]>([]);
+    const [attachments, setAttachments] = useState<Attachment[]>([]);
     const [isLoading, setIsLoading] = useState(false);
     const [isStreaming, setIsStreaming] = useState(false);
     const [streamingMsgId, setStreamingMsgId] = useState<string | null>(null);
@@ -66,7 +115,7 @@ export function useAiAgent({
         }
     }, [agentInputOverride, setAgentInputOverride]);
 
-    const executeAiAction = useCallback(async (userMessage: string, history: ChatMessage[], images: string[] = []) => {
+    const executeAiAction = useCallback(async (userMessage: string, history: ChatMessage[], images: string[] = [], attachments: Attachment[] = []) => {
         setIsLoading(true);
 
         try {
@@ -167,7 +216,7 @@ export function useAiAgent({
                         setIsStreaming(false);
                         setStreamingMsgId(null);
                     }
-                }, images.length > 0 ? images : undefined);
+                }, images.length > 0 ? images : undefined, attachments.length > 0 ? attachments : undefined);
             } else {
                 // Fallback to regular chat API
                 const response = await fetch('/api/ai', {
@@ -211,22 +260,27 @@ export function useAiAgent({
         setInputValue('');
         setAttachedLibraryFiles([]);
         const currentImages = [...selectedImages];
+        const currentAttachments = [...attachments];
         setSelectedImages([]);
+        setAttachments([]);
 
         addMessage({
             role: 'user',
             content: finalMessage,
             images: currentImages,
+            attachments: currentAttachments
         });
 
-        await executeAiAction(finalMessage, agentMessages, currentImages);
-    }, [inputValue, selectedImages, isLoading, addMessage, agentMessages, executeAiAction, attachedLibraryFiles]);
+        await executeAiAction(finalMessage, agentMessages, currentImages, currentAttachments);
+    }, [inputValue, selectedImages, attachments, isLoading, addMessage, agentMessages, executeAiAction, attachedLibraryFiles]);
 
     return {
         inputValue,
         setInputValue,
         selectedImages,
         setSelectedImages,
+        attachments,
+        setAttachments,
         attachedLibraryFiles,
         setAttachedLibraryFiles,
         isLoading,
@@ -234,5 +288,6 @@ export function useAiAgent({
         streamingMsgId,
         handleSubmit,
         executeAiAction,
+        uploadFile,
     };
 }

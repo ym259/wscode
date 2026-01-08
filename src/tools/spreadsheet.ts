@@ -10,7 +10,7 @@ import { findFileHandle } from './utils';
  * Get spreadsheet-specific tools for reading and modifying xlsx files
  */
 export const getSpreadsheetTools = (context: ToolContext): ToolDefinition[] => {
-    const { workspaceFiles, activeFilePath, activeFileHandle, setCellValue, addFileToWorkspace } = context;
+    const { workspaceFiles, activeFilePath, activeFileHandle, setCellValue, addFileToWorkspace, addLoadedImageFile } = context;
 
     return [
         createTool(
@@ -59,26 +59,55 @@ export const getSpreadsheetTools = (context: ToolContext): ToolDefinition[] => {
 
                     const sheets = workbook.SheetNames.map((sheetName, index) => {
                         const worksheet = workbook.Sheets[sheetName];
-                        const range = XLSX.utils.decode_range(worksheet['!ref'] || 'A1');
-                        const rowCount = range.e.r - range.s.r + 1;
-                        const colCount = range.e.c - range.s.c + 1;
+
+                        // Original range from !ref
+                        const ref = worksheet['!ref'];
+
+                        // Calculate trimmed range (actual data)
+                        let minR = Infinity, maxR = -Infinity;
+                        let minC = Infinity, maxC = -Infinity;
+                        let hasData = false;
+
+                        // Iterate all keys to find data bounds
+                        Object.keys(worksheet).forEach(key => {
+                            if (key.startsWith('!')) return; // Skip metadata
+
+                            const cellCoords = XLSX.utils.decode_cell(key);
+                            if (worksheet[key].v !== undefined && worksheet[key].v !== null && String(worksheet[key].v).trim() !== '') {
+                                minR = Math.min(minR, cellCoords.r);
+                                maxR = Math.max(maxR, cellCoords.r);
+                                minC = Math.min(minC, cellCoords.c);
+                                maxC = Math.max(maxC, cellCoords.c);
+                                hasData = true;
+                            }
+                        });
+
+                        const trimmedRows = hasData ? maxR - minR + 1 : 0;
+                        const trimmedCols = hasData ? maxC - minC + 1 : 0;
+
+                        // Convert column index to letter
+                        const colToLetter = (c: number) => XLSX.utils.encode_col(c);
+                        const trimmedRangeStr = hasData
+                            ? `${colToLetter(minC)}${minR + 1}:${colToLetter(maxC)}${maxR + 1}`
+                            : 'Empty';
 
                         return {
                             index,
                             name: sheetName,
-                            rows: rowCount,
-                            cols: colCount
+                            originalRange: ref || 'Empty',
+                            trimmedRange: trimmedRangeStr,
+                            rows: trimmedRows,
+                            cols: trimmedCols,
+                            isEmpty: !hasData
                         };
                     });
 
-                    let result = `Excel file "${targetPath}" contains ${sheets.length} sheet(s):\n\n`;
-                    sheets.forEach(sheet => {
-                        result += `[${sheet.index}] "${sheet.name}" - ${sheet.rows} rows × ${sheet.cols} columns\n`;
-                    });
-
-                    result += `\nTip: Use readFile({ path: "${targetPath}", sheets: ["SheetName"] }) to read specific sheet(s).`;
-
-                    return result;
+                    // Return as JSON string for the agent to parse programmatically
+                    return JSON.stringify({
+                        file: targetPath,
+                        sheetCount: sheets.length,
+                        sheets
+                    }, null, 2);
                 } catch (error) {
                     console.error('[listSpreadsheetSheets] Error:', error);
                     return `Error reading spreadsheet: ${error instanceof Error ? error.message : 'Unknown error'}`;
@@ -198,150 +227,7 @@ export const getSpreadsheetTools = (context: ToolContext): ToolDefinition[] => {
             }
         ),
 
-        createTool(
-            'readSpreadsheetRange',
-            'Read a specific range of cells with detailed information including formulas and styles. Use to debug or understand existing spreadsheet logic.',
-            {
-                type: 'object',
-                properties: {
-                    range: {
-                        type: 'string',
-                        description: 'Cell range in A1 notation (e.g., "A1:C10")'
-                    },
-                    sheet: {
-                        type: 'string',
-                        description: 'Sheet name. Defaults to first sheet.'
-                    },
-                    includeFormulas: {
-                        type: 'boolean',
-                        description: 'If true, returns formula strings (e.g., "=SUM(A1:A5)") instead of computed values'
-                    },
-                    includeStyles: {
-                        type: 'boolean',
-                        description: 'If true, includes formatting info (bold, colors, number format)'
-                    }
-                },
-                required: ['range'],
-                additionalProperties: false
-            },
-            async ({ range, sheet, includeFormulas, includeStyles }: {
-                range: string;
-                sheet?: string;
-                includeFormulas?: boolean;
-                includeStyles?: boolean;
-            }) => {
-                // Parse range (e.g., "A1:C10" or "B5")
-                const rangeMatch = range.match(/^([A-Za-z]+)(\d+)(?::([A-Za-z]+)(\d+))?$/);
-                if (!rangeMatch) {
-                    return `Error: Invalid range "${range}". Use A1 notation (e.g., "A1:C10" or "B5").`;
-                }
 
-                const colToNum = (col: string): number => {
-                    let num = 0;
-                    const c = col.toUpperCase();
-                    for (let i = 0; i < c.length; i++) {
-                        num = num * 26 + (c.charCodeAt(i) - 64);
-                    }
-                    return num - 1;
-                };
-
-                const startCol = colToNum(rangeMatch[1]);
-                const startRow = parseInt(rangeMatch[2], 10) - 1;
-                const endCol = rangeMatch[3] ? colToNum(rangeMatch[3]) : startCol;
-                const endRow = rangeMatch[4] ? parseInt(rangeMatch[4], 10) - 1 : startRow;
-
-                // Find file handle
-                let handle: FileSystemFileHandle | null = null;
-                if (activeFileHandle) {
-                    handle = activeFileHandle;
-                } else if (workspaceFiles && activeFilePath) {
-                    handle = findFileHandle(workspaceFiles, activeFilePath);
-                }
-
-                if (!handle) {
-                    return 'Error: No spreadsheet file is currently open.';
-                }
-
-                try {
-                    const XLSX = await import('xlsx-js-style');
-                    const file = await handle.getFile();
-                    const arrayBuffer = await file.arrayBuffer();
-                    const workbook = XLSX.read(arrayBuffer, { type: 'array', cellStyles: true });
-
-                    const sheetName = sheet || workbook.SheetNames[0];
-                    const worksheet = workbook.Sheets[sheetName];
-                    if (!worksheet) {
-                        return `Error: Sheet "${sheetName}" not found. Available: ${workbook.SheetNames.join(', ')}`;
-                    }
-
-                    const colToLetter = (col: number): string => {
-                        let result = '';
-                        let c = col;
-                        while (c >= 0) {
-                            result = String.fromCharCode((c % 26) + 65) + result;
-                            c = Math.floor(c / 26) - 1;
-                        }
-                        return result;
-                    };
-
-                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                    const cells: Array<{ address: string; value: any; formula?: string; format?: string; style?: Record<string, unknown> }> = [];
-
-                    for (let row = startRow; row <= endRow; row++) {
-                        for (let col = startCol; col <= endCol; col++) {
-                            const addr = `${colToLetter(col)}${row + 1}`;
-                            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                            const cell = worksheet[addr] as any;
-
-                            if (cell) {
-                                // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                                const cellInfo: any = { address: addr, value: cell.v };
-
-                                if (includeFormulas && cell.f) {
-                                    cellInfo.formula = `=${cell.f}`;
-                                }
-
-                                if (cell.z) {
-                                    cellInfo.format = cell.z;
-                                }
-
-                                if (includeStyles && cell.s) {
-                                    const style: Record<string, unknown> = {};
-                                    if (cell.s.font?.bold) style.bold = true;
-                                    if (cell.s.font?.italic) style.italic = true;
-                                    if (cell.s.font?.color?.rgb) style.fontColor = `#${cell.s.font.color.rgb}`;
-                                    if (cell.s.fill?.fgColor?.rgb) style.backgroundColor = `#${cell.s.fill.fgColor.rgb}`;
-                                    if (Object.keys(style).length > 0) {
-                                        cellInfo.style = style;
-                                    }
-                                }
-
-                                cells.push(cellInfo);
-                            }
-                        }
-                    }
-
-                    if (cells.length === 0) {
-                        return `Range ${range} is empty.`;
-                    }
-
-                    // Format output
-                    let result = `Range ${range} in "${sheetName}":\n\n`;
-                    cells.forEach(cell => {
-                        let line = `${cell.address}: ${JSON.stringify(cell.value)}`;
-                        if (cell.formula) line += ` [formula: ${cell.formula}]`;
-                        if (cell.format) line += ` [format: ${cell.format}]`;
-                        if (cell.style) line += ` [style: ${JSON.stringify(cell.style)}]`;
-                        result += line + '\n';
-                    });
-
-                    return result;
-                } catch (error) {
-                    console.error('[readSpreadsheetRange] Error:', error);
-                    return `Error reading range: ${error instanceof Error ? error.message : 'Unknown error'}`;
-                }
-            }
-        ),
 
         createTool(
             'createSpreadsheet',
@@ -420,11 +306,11 @@ export const getSpreadsheetTools = (context: ToolContext): ToolDefinition[] => {
                     for (const sheet of sheets) {
                         // Build data array: headers (if provided) + rows
                         const data: Array<Array<string | number | boolean | null>> = [];
-                        
+
                         if (sheet.headers && sheet.headers.length > 0) {
                             data.push(sheet.headers);
                         }
-                        
+
                         data.push(...sheet.rows);
 
                         // Create worksheet from data
@@ -468,8 +354,8 @@ export const getSpreadsheetTools = (context: ToolContext): ToolDefinition[] => {
 
                     // Generate workbook buffer
                     const buffer = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' });
-                    const blob = new Blob([buffer], { 
-                        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' 
+                    const blob = new Blob([buffer], {
+                        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
                     });
 
                     // Ensure filename has .xlsx extension
@@ -526,6 +412,610 @@ export const getSpreadsheetTools = (context: ToolContext): ToolDefinition[] => {
                     return `Error creating spreadsheet: ${error instanceof Error ? error.message : 'Unknown error'}`;
                 }
             }
-        )
+        ),
+        createTool(
+            'visualizeSpreadsheet',
+            'Capture a visual snapshot of the spreadsheet. Use this FIRST to see the layout and identify row/column structures. Visualizes the entire used range of the sheet.',
+            {
+                type: 'object',
+                properties: {
+                    sheet: {
+                        type: 'string',
+                        description: 'Sheet name. Defaults to first sheet.'
+                    }
+                },
+                required: [],
+                additionalProperties: false
+            },
+            async ({ sheet }: { sheet?: string }) => {
+                // Find file handle
+                let handle: FileSystemFileHandle | null = null;
+                if (activeFileHandle) {
+                    handle = activeFileHandle;
+                } else if (workspaceFiles && activeFilePath) {
+                    handle = findFileHandle(workspaceFiles, activeFilePath);
+                }
+
+                if (!handle) {
+                    return 'Error: No spreadsheet file is currently open.';
+                }
+
+                try {
+                    const XLSX = await import('xlsx-js-style');
+                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                    let workbook: any;
+
+                    // Try to get live workbook from editor context first
+                    if (context.getWorkbook) {
+                        try {
+                            workbook = context.getWorkbook();
+                            if (workbook) {
+                                console.log('[visualizeSpreadsheet] Using live workbook data from editor');
+                            }
+                        } catch (e) {
+                            console.error('[visualizeSpreadsheet] Failed to get live workbook:', e);
+                        }
+                    }
+
+                    // Fallback to reading file from disk if no live workbook
+                    if (!workbook) {
+                        console.log('[visualizeSpreadsheet] Reading file from disk');
+                        const file = await handle.getFile();
+                        const arrayBuffer = await file.arrayBuffer();
+                        workbook = XLSX.read(arrayBuffer, { type: 'array' });
+                    }
+
+                    const sheetName = sheet || workbook.SheetNames[0];
+                    const worksheet = workbook.Sheets[sheetName];
+                    if (!worksheet) {
+                        return `Error: Sheet "${sheetName}" not found. Available: ${workbook.SheetNames.join(', ')}`;
+                    }
+
+                    // Use XLSX utils for column conversion
+                    const colToLetter = XLSX.utils.encode_col;
+
+
+                    // Determine Range
+                    let startCol = 0, startRow = 0, endCol = 0, endRow = 0;
+
+
+                    // Auto-detect range based on data
+                    let minR = Infinity, maxR = -Infinity;
+                    let minC = Infinity, maxC = -Infinity;
+
+                    let hasData = false;
+
+                    Object.keys(worksheet).forEach(key => {
+                        if (key.startsWith('!')) return;
+                        const cell = XLSX.utils.decode_cell(key);
+                        if (worksheet[key].v !== undefined && worksheet[key].v !== null && String(worksheet[key].v).trim() !== '') {
+                            minR = Math.min(minR, cell.r);
+                            maxR = Math.max(maxR, cell.r);
+                            minC = Math.min(minC, cell.c);
+                            maxC = Math.max(maxC, cell.c);
+                            hasData = true;
+                        }
+                    });
+
+
+                    if (hasData) {
+                        startCol = minC;
+                        startRow = minR;
+                        endCol = maxC;
+                        endRow = maxR;
+
+                    } else {
+                        // Empty sheet or failed detection
+                        startCol = 0; startRow = 0; endCol = 5; endRow = 5; // Default small area
+
+                    }
+
+                    // Build data for image generation
+                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                    const rows: any[][] = [];
+                    for (let row = startRow; row <= endRow; row++) {
+                        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                        const rowData: any[] = [];
+                        for (let col = startCol; col <= endCol; col++) {
+                            const addr = `${colToLetter(col)}${row + 1}`;
+                            let cellAddress = addr;
+
+                            // Check for merged cells to potentially blank out non-master cells for visual clarity
+                            // although html-to-image is robust enough, simpler grid often looks better for AI understanding
+                            if (worksheet['!merges']) {
+                                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                                const merge = worksheet['!merges'].find((m: any) =>
+                                    row >= m.s.r && row <= m.e.r && col >= m.s.c && col <= m.e.c
+                                );
+                                if (merge) {
+                                    if (row === merge.s.r && col === merge.s.c) {
+                                        cellAddress = `${colToLetter(merge.s.c)}${merge.s.r + 1}`;
+                                    } else {
+                                        cellAddress = ''; // Signal to look nowhere
+                                    }
+                                }
+                            }
+
+                            let value = '';
+                            if (cellAddress) {
+                                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                                const cell = worksheet[cellAddress] as any;
+                                value = cell ? (cell.w || cell.v) : '';
+                                if (value === undefined || value === null) value = '';
+                            }
+                            rowData.push(value);
+                        }
+                        rows.push(rowData);
+                    }
+
+                    // Generate Image using Canvas
+                    // Settings matching standard XlsxEditor look
+                    const rowHeaderWidth = 80;
+                    const colHeaderHeight = 32;
+                    const defaultColWidth = 73;
+                    const defaultRowHeight = 20;
+                    const headerBg = '#f4f5f8';
+                    const borderColor = '#d4d4d4';
+
+                    // Prepare Dimensions
+                    const colWidths: number[] = [];
+                    const rowHeights: number[] = [];
+
+                    // Parse Column Widths
+                    // SheetJS allows !cols with {wpx} or {wch}. wpx is pixels. wch is chars.
+                    const colInfo = worksheet['!cols'] || [];
+                    for (let c = startCol; c <= endCol; c++) {
+                        const colDef = colInfo[c];
+                        let w = defaultColWidth;
+                        if (colDef) {
+                            if (colDef.wpx) w = colDef.wpx;
+                            else if (colDef.wch) w = colDef.wch * 7.5; // Approx chars to pixels
+                        }
+                        colWidths.push(w);
+                    }
+
+                    // Parse Row Heights
+                    const rowInfo = worksheet['!rows'] || [];
+                    for (let r = startRow; r <= endRow; r++) {
+                        const rowDef = rowInfo[r];
+                        let h = defaultRowHeight;
+                        if (rowDef && rowDef.hpx) h = rowDef.hpx;
+                        rowHeights.push(h);
+                    }
+
+                    // Calculate Total Size
+                    const totalWidth = rowHeaderWidth + colWidths.reduce((a, b) => a + b, 0);
+                    const totalHeight = colHeaderHeight + rowHeights.reduce((a, b) => a + b, 0);
+
+                    // Positions Cache
+                    const colPositions: number[] = [rowHeaderWidth];
+                    let currentX = rowHeaderWidth;
+                    for (const w of colWidths) {
+                        currentX += w;
+                        colPositions.push(currentX); // End of this Col / Start of Next
+                    }
+                    // colPositions[i] is Left of column i (relative to grid start) ? No. 
+                    // Let's make colPositions[i] be the X coordinate of the START of column i (relative to canvas 0)
+                    // So colPositions[0] = rowHeaderWidth.
+                    // Correct loop:
+                    const xPos: number[] = [];
+                    let cx = rowHeaderWidth;
+                    for (let i = 0; i < colWidths.length; i++) {
+                        xPos.push(cx);
+                        cx += colWidths[i];
+                    }
+
+                    const yPos: number[] = [];
+                    let cy = colHeaderHeight;
+                    for (let i = 0; i < rowHeights.length; i++) {
+                        yPos.push(cy);
+                        cy += rowHeights[i];
+                    }
+
+                    // Create Canvas
+                    const canvas = document.createElement('canvas');
+
+                    // Safety: Reduce DPR for large sheets to prevent massive Base64 strings
+                    let dpr = 2;
+                    if (totalWidth > 2000 || totalHeight > 2000) {
+                        dpr = 1;
+                    }
+                    if (totalWidth > 4000 || totalHeight > 4000) {
+                        dpr = 1;
+                    }
+
+                    canvas.width = totalWidth * dpr;
+                    canvas.height = totalHeight * dpr;
+                    const ctx = canvas.getContext('2d');
+                    if (!ctx) return 'Error: Could not get canvas context.';
+
+                    ctx.scale(dpr, dpr);
+                    ctx.fillStyle = 'white';
+                    ctx.fillRect(0, 0, totalWidth, totalHeight);
+                    ctx.textAlign = 'center';
+                    ctx.textBaseline = 'middle';
+                    ctx.lineWidth = 1;
+
+                    // --- DRAWING ---
+
+                    // 1. Grid Backgrounds & Borders (Headers & Cells)
+
+                    // Column Header Backgrounds
+                    for (let i = 0; i < colWidths.length; i++) {
+                        const x = xPos[i];
+                        const w = colWidths[i];
+                        ctx.fillStyle = headerBg;
+                        ctx.fillRect(x, 0, w, colHeaderHeight);
+                        ctx.strokeStyle = borderColor;
+                        ctx.strokeRect(x - 0.5, 0 - 0.5, w + 1, colHeaderHeight + 1);
+                    }
+
+                    // Row Header Backgrounds
+                    for (let i = 0; i < rowHeights.length; i++) {
+                        const y = yPos[i];
+                        const h = rowHeights[i];
+                        ctx.fillStyle = headerBg;
+                        ctx.fillRect(0, y, rowHeaderWidth, h);
+                        ctx.strokeStyle = borderColor;
+                        ctx.strokeRect(0, y, rowHeaderWidth, h);
+
+                        // Grid lines for cells in this row
+                        for (let j = 0; j < colWidths.length; j++) {
+                            const x = xPos[j];
+                            const w = colWidths[j];
+                            ctx.strokeStyle = borderColor;
+                            ctx.strokeRect(x, y, w, h);
+                        }
+                    }
+
+                    // 2. Cell Content
+                    ctx.fillStyle = '#000';
+                    ctx.font = '11px Arial';
+                    ctx.textAlign = 'left';
+
+                    for (let r = 0; r < rows.length; r++) {
+                        const y = yPos[r];
+                        const h = rowHeights[r];
+                        const rowData = rows[r];
+
+                        for (let c = 0; c < rowData.length; c++) {
+                            const val = rowData[c];
+                            if (!val) continue;
+
+                            const x = xPos[c];
+                            const w = colWidths[c];
+
+                            // Clip
+                            ctx.save();
+                            ctx.beginPath();
+                            ctx.rect(x, y, w, h);
+                            ctx.clip();
+
+                            // Draw Text
+                            ctx.fillText(String(val), x + 2, y + h / 2);
+                            ctx.restore();
+                        }
+                    }
+
+                    // 3. Header Text (Z-Layering for overflow)
+                    ctx.fillStyle = '#666';
+                    ctx.font = 'bold 16px sans-serif';
+                    ctx.textAlign = 'center';
+
+                    // Column Labels
+                    for (let i = 0; i < colWidths.length; i++) {
+                        const colIdx = startCol + i;
+                        // Sparse Indexing: Every 5th
+                        if (colIdx % 5 === 0) {
+                            const x = xPos[i];
+                            const w = colWidths[i];
+                            const label = colToLetter(colIdx);
+                            ctx.fillText(label, x + w / 2, colHeaderHeight / 2);
+                        }
+                    }
+
+                    // Row Labels
+                    for (let i = 0; i < rowHeights.length; i++) {
+                        const rowIdx = startRow + i;
+                        // Sparse Indexing: Every 5th
+                        if (rowIdx % 5 === 0) {
+                            const y = yPos[i];
+                            const h = rowHeights[i];
+                            ctx.fillText(String(rowIdx + 1), rowHeaderWidth / 2, y + h / 2);
+                        }
+                    }
+
+                    // Generate Data URL and return as Markdown Image
+                    const dataUrl = canvas.toDataURL('image/png');
+
+                    // Try to upload first to avoid massive Base64 strings in context (Token limits)
+                    if (addLoadedImageFile) {
+                        try {
+                            const params = { imageBase64: dataUrl, filename: `${sheetName}_FULL_${Date.now()}.png` };
+                            const response = await fetch('/api/image/upload', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify(params)
+                            });
+                            if (response.ok) {
+                                const { file_id } = await response.json();
+                                // Inject image into agent context
+                                addLoadedImageFile({ file_id, filename: params.filename });
+                                return `[Image generated. File ID: ${file_id}]`;
+                            }
+                        } catch (e) {
+                            console.error('Image upload failed, falling back to Base64:', e);
+                        }
+                    }
+
+                    // We explicitly want to allow the user to see the image in the chat/tool output
+                    // so we return the markdown image string. 
+                    return `![Spreadsheet](${dataUrl})`;
+
+                } catch (error) {
+                    console.error('[visualizeSpreadsheet] Error:', error);
+                    return `Error: ${error instanceof Error ? error.message : String(error)}`;
+                }
+            }
+        ),
+        createTool(
+            'readSpreadsheet',
+            'Read a range of cells or specific cells. Output formats: "json" (detailed structure & merges), "csv" (data), "markdown" (chat-friendly). Use this to read specific data attributes or check values.',
+            {
+                type: 'object',
+                properties: {
+                    range: {
+                        type: 'string',
+                        description: 'Cell range in A1 notation (e.g., "A1:E10"). Optional. If omitted, defaults to the entire used range of the sheet.'
+                    },
+                    cells: {
+                        type: 'array',
+                        items: { type: 'string' },
+                        description: 'List of specific cells to read (e.g., ["A1", "C5"]). Optional. If provided, range is ignored.'
+                    },
+                    sheet: {
+                        type: 'string',
+                        description: 'Sheet name. Defaults to first sheet.'
+                    },
+                    format: {
+                        type: 'string',
+                        enum: ['markdown', 'csv', 'ascii', 'json'],
+                        description: 'Output format. Defaults to "markdown". Use "json" for detailed structure/merges/styles.'
+                    }
+                },
+                required: [],
+                additionalProperties: false
+            },
+            async ({ range, cells, sheet, format = 'markdown' }: { range?: string; cells?: string[]; sheet?: string; format?: 'markdown' | 'csv' | 'ascii' | 'json' }) => {
+                // Find file handle
+                let handle: FileSystemFileHandle | null = null;
+                if (activeFileHandle) {
+                    handle = activeFileHandle;
+                } else if (workspaceFiles && activeFilePath) {
+                    handle = findFileHandle(workspaceFiles, activeFilePath);
+                }
+
+                if (!handle) {
+                    return 'Error: No spreadsheet file is currently open.';
+                }
+
+                try {
+                    const XLSX = await import('xlsx-js-style');
+                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                    let workbook: any;
+
+                    // Try to get live workbook from editor context first
+                    if (context.getWorkbook) {
+                        try {
+                            workbook = context.getWorkbook();
+                        } catch (e) {
+                            console.error('[readSpreadsheet] Failed to get live workbook:', e);
+                        }
+                    }
+
+                    // Fallback to reading file from disk if no live workbook
+                    if (!workbook) {
+                        const file = await handle.getFile();
+                        const arrayBuffer = await file.arrayBuffer();
+                        workbook = XLSX.read(arrayBuffer, { type: 'array' });
+                    }
+
+                    const sheetName = sheet || workbook.SheetNames[0];
+                    const worksheet = workbook.Sheets[sheetName];
+                    if (!worksheet) {
+                        return `Error: Sheet "${sheetName}" not found. Available: ${workbook.SheetNames.join(', ')}`;
+                    }
+
+                    // Use XLSX utils for column conversion
+                    const colToLetter = XLSX.utils.encode_col;
+                    const letterToCol = XLSX.utils.decode_col;
+
+
+                    // Determine Range
+                    let startCol = 0, startRow = 0, endCol = 0, endRow = 0;
+                    let rangeStr = '';
+
+                    if (range) {
+                        const rangeMatch = range.match(/^([A-Za-z]+)(\d+)(?::([A-Za-z]+)(\d+))?$/);
+                        if (!rangeMatch) {
+                            return `Error: Invalid range "${range}". Use A1 notation (e.g., "A1:C10" or "B5").`;
+                        }
+                        startCol = letterToCol(rangeMatch[1]);
+                        startRow = parseInt(rangeMatch[2], 10) - 1;
+                        endCol = rangeMatch[3] ? letterToCol(rangeMatch[3]) : startCol;
+                        endRow = rangeMatch[4] ? parseInt(rangeMatch[4], 10) - 1 : startRow;
+                        rangeStr = range;
+                    } else {
+                        // Auto-detect range based on data
+                        let minR = Infinity, maxR = -Infinity;
+                        let minC = Infinity, maxC = -Infinity;
+                        let hasData = false;
+
+                        Object.keys(worksheet).forEach(key => {
+                            if (key.startsWith('!')) return;
+                            const cell = XLSX.utils.decode_cell(key);
+                            if (worksheet[key].v !== undefined && worksheet[key].v !== null && String(worksheet[key].v).trim() !== '') {
+                                minR = Math.min(minR, cell.r);
+                                maxR = Math.max(maxR, cell.r);
+                                minC = Math.min(minC, cell.c);
+                                maxC = Math.max(maxC, cell.c);
+                                hasData = true;
+                            }
+                        });
+
+
+                        if (hasData) {
+                            startCol = minC;
+                            startRow = minR;
+                            endCol = maxC;
+                            endRow = maxR;
+                            rangeStr = `${colToLetter(startCol)}${startRow + 1}:${colToLetter(endCol)}${endRow + 1}`;
+                        } else {
+                            // Empty sheet or failed detection
+                            startCol = 0; startRow = 0; endCol = 5; endRow = 5; // Default small area
+                            rangeStr = "A1:F6";
+                        }
+                    }
+
+                    // --- JSON MODE ---
+                    if (format === 'json') {
+                        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                        const result: any = {
+                            sheet: sheetName,
+                            range: rangeStr,
+                            mergedCells: [],
+                            cells: {}
+                        };
+
+                        // Collect merged cells
+                        if (worksheet['!merges']) {
+                            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                            worksheet['!merges'].forEach((m: any) => {
+                                // Check intersection with bounds
+                                if (m.e.r >= startRow && m.s.r <= endRow && m.e.c >= startCol && m.s.c <= endCol) {
+                                    result.mergedCells.push({
+                                        range: `${colToLetter(m.s.c)}${m.s.r + 1}:${colToLetter(m.e.c)}${m.e.r + 1}`,
+                                        master: `${colToLetter(m.s.c)}${m.s.r + 1}`,
+                                        start: { r: m.s.r, c: m.s.c },
+                                        end: { r: m.e.r, c: m.e.c }
+                                    });
+                                }
+                            });
+                        }
+
+                        // Collect Cells
+                        if (cells && cells.length > 0) {
+                            cells.forEach(cellAddr => {
+                                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                                const cell = worksheet[cellAddr] as any;
+                                result.cells[cellAddr] = cell ? { v: cell.v, w: cell.w, s: cell.s } : null;
+                            });
+                            result.range = 'Specific Cells';
+                        } else {
+                            for (let r = startRow; r <= endRow; r++) {
+                                for (let c = startCol; c <= endCol; c++) {
+                                    const addr = XLSX.utils.encode_cell({ r, c });
+                                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                                    const cell = worksheet[addr] as any;
+                                    if (cell) {
+                                        result.cells[addr] = { v: cell.v, w: cell.w, s: cell.s };
+                                    }
+                                }
+                            }
+                        }
+
+                        return JSON.stringify(result, null, 2);
+                    }
+
+
+                    // --- PREPARE GRID DATA (for Markdown/CSV) ---
+                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                    const rows: any[][] = [];
+                    for (let row = startRow; row <= endRow; row++) {
+                        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                        const rowData: any[] = [];
+                        for (let col = startCol; col <= endCol; col++) {
+                            const addr = `${colToLetter(col)}${row + 1}`;
+                            let cellAddress = addr;
+
+                            if (worksheet['!merges']) {
+                                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                                const merge = worksheet['!merges'].find((m: any) =>
+                                    row >= m.s.r && row <= m.e.r && col >= m.s.c && col <= m.e.c
+                                );
+                                if (merge) {
+                                    if (row === merge.s.r && col === merge.s.c) {
+                                        cellAddress = `${colToLetter(merge.s.c)}${merge.s.r + 1}`;
+                                    } else {
+                                        cellAddress = ''; // Signal to look nowhere
+                                    }
+                                }
+                            }
+
+                            let value = '';
+                            if (cellAddress) {
+                                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                                const cell = worksheet[cellAddress] as any;
+                                value = cell ? (cell.w || cell.v) : '';
+                                if (value === undefined || value === null) value = '';
+                            }
+                            rowData.push(value);
+                        }
+                        rows.push(rowData);
+                    }
+
+
+                    // --- MARKDOWN / CSV / ASCII ---
+                    let result = `Grid View (${rangeStr}):\n\n`;
+
+                    if (format === 'markdown') {
+                        if (rows.length > 0) {
+                            const headerRow = '| ' + Array.from({ length: endCol - startCol + 1 }, (_, i) => colToLetter(startCol + i)).join(' | ') + ' |';
+                            const separatorRow = '| ' + Array.from({ length: endCol - startCol + 1 }, () => '---').join(' | ') + ' |';
+                            result += headerRow + '\n' + separatorRow + '\n';
+                            rows.forEach((row, idx) => {
+                                result += '| ' + row.map(v => String(v).replace(/\|/g, '\\|').replace(/\n/g, '<br>')).join(' | ') + ` | **${startRow + idx + 1}**\n`;
+                            });
+                        }
+                    } else if (format === 'csv') {
+                        rows.forEach(row => {
+                            result += row.map(v => {
+                                const s = String(v);
+                                return (s.includes(',') || s.includes('"') || s.includes('\n')) ? `"${s.replace(/"/g, '""')}"` : s;
+                            }).join(',') + '\n';
+                        });
+                    } else { // ascii
+                        rows.forEach(row => {
+                            result += row.map(v => String(v)).join('\t') + '\n';
+                        });
+                    }
+
+                    // --- APPEND MERGE INFO (For Text Modes) ---
+                    if (worksheet['!merges'] && worksheet['!merges'].length > 0) {
+                        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                        const intersectingMerges = worksheet['!merges'].filter((m: any) =>
+                            m.s.r <= endRow && m.e.r >= startRow &&
+                            m.s.c <= endCol && m.e.c >= startCol
+                        );
+                        if (intersectingMerges.length > 0) {
+                            result += '\nMerged Cells:\n';
+                            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                            intersectingMerges.forEach((m: any) => {
+                                const rStr = `${colToLetter(m.s.c)}${m.s.r + 1}:${colToLetter(m.e.c)}${m.e.r + 1}`;
+                                const mStr = `${colToLetter(m.s.c)}${m.s.r + 1}`;
+                                result += `- ${rStr} (Master: ${mStr})\n`;
+                            });
+                        }
+                    }
+
+                    return result;
+
+                } catch (error) {
+                    console.error('[readSpreadsheet] Error:', error);
+                    return `Error: ${error instanceof Error ? error.message : String(error)}`;
+                }
+            }
+        ),
+
     ];
 };

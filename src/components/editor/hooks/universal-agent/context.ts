@@ -59,6 +59,8 @@ export function buildToolContext(
             dangerouslyAllowBrowser: true
         },
         getCustomEditorRef: () => customEditorRef || null,
-        addLoadedPdfFile: config.addLoadedPdfFile
+        addLoadedPdfFile: config.addLoadedPdfFile,
+        addLoadedImageFile: config.addLoadedImageFile,
+        getWorkbook: config.getWorkbook
     };
 }

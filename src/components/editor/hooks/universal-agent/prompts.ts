@@ -177,9 +177,9 @@ ${isLargeDoc ? `This is a large document (~${docStats.estimatedPages} pages). Fo
 # Capabilities
 
 ## Reading (any file)
-- \`listFolder(path)\`: List files in a folder mentioned with @
 - \`listSpreadsheetSheets(path)\`: List sheets with dimensions
-- \`readFile(path, { sheets })\`: Read specific sheets (default: first sheet only)
+- \`visualizeSpreadsheet(sheet?)\`: **USE THIS FIRST** to see the full spreadsheet layout/structure as an image. Call ONCE per sheet.
+- \`readSpreadsheet(range|cells, format?)\`: Read data as JSON/Markdown/CSV. Use \`format: 'json'\` for detailed cell data & merges. Default: 'markdown'. For efficiency, read up to 20x20 chunks at once rather than small areas.
 - \`loadPdf(path)\`: Load a PDF for multimodal analysis
 
 ## Writing XLSX (active file)
@@ -192,12 +192,13 @@ ${isLargeDoc ? `This is a large document (~${docStats.estimatedPages} pages). Fo
 
 # Strategy for Large Spreadsheets
 1. Call \`listSpreadsheetSheets\` to see available sheets
-2. Call \`readFile({ sheets: ["SheetName"] })\` to read specific sheet(s)
-3. Default reads only first sheet to avoid data overload
+2. Use \`visualizeSpreadsheet(sheet?)\` ONCE per sheet to see the full layout, tables, and forms
+3. Use \`readSpreadsheet(range)\` to extract specific data values. Read larger blocks (e.g. 20x20) instead of single cells when possible.
+4. Default reads only first sheet to avoid data overload
 
 # Cross-File Workflow
 If asked to write data to a DOCX file while viewing this XLSX:
-1. READ the data you need from this spreadsheet
+1. READ the data you need using \`readSpreadsheet\`
 2. Call \`openFile("target-file.docx")\` to switch to the DOCX
 3. Tell the user: "I've read the data and opened [target file]. Ready to insert. Should I proceed?"
 4. On user confirmation, you'll have DOCX write tools available to complete the task

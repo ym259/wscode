@@ -48,4 +48,8 @@ export interface ToolContext {
     getCustomEditorRef?: () => React.RefObject<any> | null;
     /** Callback to register a loaded PDF file_id for injection into next message */
     addLoadedPdfFile?: (file: { file_id: string; filename: string }) => void;
+    /** Callback to register a loaded Image file_id for injection into next message */
+    addLoadedImageFile?: (file: { file_id: string; filename: string }) => void;
+    /** Callback to get the current workbook instance */
+    getWorkbook?: () => any;
 }

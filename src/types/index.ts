@@ -17,6 +17,15 @@ export interface FileSystemItem {
     content?: string; // For library files that are loaded efficiently
 }
 
+export interface Attachment {
+    id: string;
+    type: 'image' | 'file';
+    url?: string; // for images (base64)
+    file_id?: string; // for OpenAI files
+    name: string;
+    mimeType: string;
+}
+
 export interface EditorTab {
     id: string;
     name: string;
@@ -53,7 +62,9 @@ export interface ChatMessage {
     id: string;
     role: 'user' | 'assistant' | 'system';
     content: string;
-    images?: string[]; // Optional array of base64 image strings
+    // Optional array of base64 image strings (deprecated, use attachments)
+    images?: string[];
+    attachments?: Attachment[];
     items?: MessageItem[];  // Ordered list of reasoning and tool calls
     // Deprecated: use items instead
     toolCalls?: ToolCall[];

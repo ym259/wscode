@@ -2,8 +2,8 @@
 
 /* eslint-disable @next/next/no-img-element */
 import React, { useState, useRef, useCallback, useEffect, useMemo } from 'react';
-import { Send, Quote, X, Paperclip, Image as ImageIcon } from 'lucide-react';
-import { FileSystemItem } from '@/types';
+import { Send, Quote, X, Paperclip, Image as ImageIcon, FileText } from 'lucide-react';
+import { FileSystemItem, Attachment } from '@/types';
 import { useWorkspace } from '@/contexts/WorkspaceContext';
 import styles from './AgentPanel.module.css';
 
@@ -13,9 +13,9 @@ interface MentionInputProps {
     onSubmit: (message?: string) => void;
     disabled: boolean;
     workspaceFiles: FileSystemItem[];
-    selectedImages?: string[];
-    onImageAdd?: (images: string[]) => void;
-    onImageRemove?: (index: number) => void;
+    attachments?: Attachment[];
+    onAttachmentAdd?: (files: { file: File, type: 'image' | 'file', url?: string }[]) => void;
+    onAttachmentRemove?: (index: number) => void;
     /** File mentions displayed as chips */
     mentionedFiles?: { name: string; path: string }[];
     onMentionAdd?: (file: { name: string; path: string }) => void;
@@ -31,9 +31,9 @@ export function MentionInput({
     onSubmit,
     disabled,
     workspaceFiles,
-    selectedImages = [],
-    onImageAdd,
-    onImageRemove,
+    attachments = [],
+    onAttachmentAdd,
+    onAttachmentRemove,
     mentionedFiles = [],
     onMentionAdd,
     onMentionRemove
@@ -70,23 +70,23 @@ export function MentionInput({
     // Prioritize folders when query matches exactly, then files
     const filteredItems = useMemo(() => {
         if (mentionQuery === null) return [];
-        
+
         const query = mentionQuery.toLowerCase();
         const matching = allItems.filter(f =>
             f.name.toLowerCase().includes(query) ||
             f.path.toLowerCase().includes(query)
         );
-        
+
         // Sort: exact name matches first, then folders, then by path length (shorter = more relevant)
         return matching
             .sort((a, b) => {
                 const aExact = a.name.toLowerCase() === query ? 0 : 1;
                 const bExact = b.name.toLowerCase() === query ? 0 : 1;
                 if (aExact !== bExact) return aExact - bExact;
-                
+
                 // Folders before files when relevance is similar
                 if (a.type !== b.type) return a.type === 'directory' ? -1 : 1;
-                
+
                 return a.path.length - b.path.length;
             })
             .slice(0, 10);
@@ -192,12 +192,12 @@ export function MentionInput({
         chip.contentEditable = 'false';
         chip.dataset.mentionPath = item.path;
         chip.dataset.mentionType = item.type;
-        
+
         // Different icons for files vs folders
         const fileIcon = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>`;
         const folderIcon = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>`;
         const icon = item.type === 'directory' ? folderIcon : fileIcon;
-        
+
         chip.innerHTML = `
             <span class="${styles.inlineMentionIcon}">${icon}</span>
             <span class="${styles.inlineMentionText}">${item.name}${item.type === 'directory' ? '/' : ''}</span>
@@ -277,52 +277,66 @@ export function MentionInput({
         const files = Array.from(e.target.files || []);
         if (files.length === 0) return;
 
-        const imagePromises = files.map(file => {
-            return new Promise<string>((resolve, reject) => {
-                const reader = new FileReader();
-                reader.onload = (event) => resolve(event.target?.result as string);
-                reader.onerror = reject;
-                reader.readAsDataURL(file);
+        const processedFilesPromises = files.map(file => {
+            return new Promise<{ file: File, type: 'image' | 'file', url?: string }>((resolve) => {
+                if (file.type.startsWith('image/')) {
+                    const reader = new FileReader();
+                    reader.onload = (event) => resolve({
+                        file,
+                        type: 'image',
+                        url: event.target?.result as string
+                    });
+                    reader.readAsDataURL(file);
+                } else {
+                    resolve({ file, type: 'file' });
+                }
             });
         });
 
-        Promise.all(imagePromises).then(base64Images => {
-            if (onImageAdd) onImageAdd(base64Images);
+        Promise.all(processedFilesPromises).then(results => {
+            if (onAttachmentAdd) onAttachmentAdd(results);
         });
         e.target.value = '';
-    }, [onImageAdd]);
+    }, [onAttachmentAdd]);
 
-    // Handle paste for images
+    // Handle paste for images/files
     const handlePaste = useCallback((e: React.ClipboardEvent<HTMLDivElement>) => {
         const items = e.clipboardData?.items;
         if (!items) return;
 
-        const imageFiles: File[] = [];
+        const files: File[] = [];
         for (let i = 0; i < items.length; i++) {
             const item = items[i];
-            if (item.type.startsWith('image/')) {
+            if (item.kind === 'file') {
                 const file = item.getAsFile();
-                if (file) imageFiles.push(file);
+                if (file) files.push(file);
             }
         }
 
-        if (imageFiles.length === 0) return;
+        if (files.length === 0) return;
 
         e.preventDefault();
 
-        const imagePromises = imageFiles.map(file => {
-            return new Promise<string>((resolve, reject) => {
-                const reader = new FileReader();
-                reader.onload = (event) => resolve(event.target?.result as string);
-                reader.onerror = reject;
-                reader.readAsDataURL(file);
+        const processedFilesPromises = files.map(file => {
+            return new Promise<{ file: File, type: 'image' | 'file', url?: string }>((resolve) => {
+                if (file.type.startsWith('image/')) {
+                    const reader = new FileReader();
+                    reader.onload = (event) => resolve({
+                        file,
+                        type: 'image',
+                        url: event.target?.result as string
+                    });
+                    reader.readAsDataURL(file);
+                } else {
+                    resolve({ file, type: 'file' });
+                }
             });
         });
 
-        Promise.all(imagePromises).then(base64Images => {
-            if (onImageAdd) onImageAdd(base64Images);
+        Promise.all(processedFilesPromises).then(results => {
+            if (onAttachmentAdd) onAttachmentAdd(results);
         });
-    }, [onImageAdd]);
+    }, [onAttachmentAdd]);
 
     const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLDivElement>) => {
         if (e.nativeEvent.isComposing) return;
@@ -378,12 +392,12 @@ export function MentionInput({
                             <span className={styles.mentionItemIcon}>
                                 {item.type === 'directory' ? (
                                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                        <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+                                        <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
                                     </svg>
                                 ) : (
                                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
-                                        <polyline points="14 2 14 8 20 8"/>
+                                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                                        <polyline points="14 2 14 8 20 8" />
                                     </svg>
                                 )}
                             </span>
@@ -417,21 +431,32 @@ export function MentionInput({
                 </div>
             )}
 
-            {/* Attached Images */}
-            {selectedImages.length > 0 && (
+            {/* Attached Files/Images */}
+            {attachments.length > 0 && (
                 <div className={styles.attachedSelectionContainer}>
-                    {selectedImages.map((img, idx) => (
+                    {attachments.map((att, idx) => (
                         <div key={idx} className={styles.attachedSelectionChip} style={{ padding: '4px 8px' }}>
-                            <ImageIcon size={14} className={styles.chipIcon} />
-                            <div className={styles.chipContent}>
-                                <img src={img} alt="attached" style={{ width: 20, height: 20, objectFit: 'cover', borderRadius: 2 }} />
-                                <span className={styles.chipFileName}>Image {idx + 1}</span>
-                            </div>
+                            {att.type === 'image' && att.url ? (
+                                <>
+                                    <ImageIcon size={14} className={styles.chipIcon} />
+                                    <div className={styles.chipContent}>
+                                        <img src={att.url} alt="attached" style={{ width: 20, height: 20, objectFit: 'cover', borderRadius: 2 }} />
+                                        <span className={styles.chipFileName}>{att.name}</span>
+                                    </div>
+                                </>
+                            ) : (
+                                <>
+                                    <FileText size={14} className={styles.chipIcon} />
+                                    <div className={styles.chipContent}>
+                                        <span className={styles.chipFileName}>{att.name}</span>
+                                    </div>
+                                </>
+                            )}
                             <button
                                 type="button"
                                 className={styles.chipRemoveButton}
-                                onClick={() => onImageRemove?.(idx)}
-                                title="Remove image"
+                                onClick={() => onAttachmentRemove?.(idx)}
+                                title="Remove attachment"
                             >
                                 <X size={12} />
                             </button>
@@ -446,14 +471,14 @@ export function MentionInput({
                     ref={fileInputRef}
                     style={{ display: 'none' }}
                     onChange={handleFileChange}
-                    accept="image/*"
+                    accept="image/*,.pdf"
                     multiple
                 />
                 <button
                     type="button"
                     className={styles.attachButton}
                     onClick={() => fileInputRef.current?.click()}
-                    title="Attach image"
+                    title="Attach files (Images, PDF)"
                     disabled={disabled}
                     style={{
                         background: 'none',
@@ -474,7 +499,7 @@ export function MentionInput({
                     onInput={handleInput}
                     onKeyDown={handleKeyDown}
                     onPaste={handlePaste}
-                    data-placeholder={attachedSelection || selectedImages.length > 0 ? "Ask about this..." : "Ask anything about your document..."}
+                    data-placeholder={attachedSelection || attachments.length > 0 ? "Ask about this..." : "Ask anything about your document..."}
                     suppressContentEditableWarning
                     style={{
                         minHeight: '20px',

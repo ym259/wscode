@@ -65,6 +65,83 @@ export const getNavigationTools = (context: ToolContext): ToolDefinition[] => {
                         }
                     }
 
+                    // XLSX Search Support
+                    if (activeFilePath?.toLowerCase().endsWith('.xlsx') && activeFileHandle) {
+                        try {
+                            const XLSX = await import('xlsx-js-style');
+                            const file = await activeFileHandle.getFile();
+                            const arrayBuffer = await file.arrayBuffer();
+                            const workbook = XLSX.read(arrayBuffer, { type: 'array' });
+
+                            const matches: Array<{ sheet: string; address: string; value: string; cellIndex: number }> = [];
+                            let totalMatches = 0;
+
+                            for (const sheetName of workbook.SheetNames) {
+                                const worksheet = workbook.Sheets[sheetName];
+                                const range = XLSX.utils.decode_range(worksheet['!ref'] || 'A1');
+
+                                // Iterate cells
+                                const colToLetter = (col: number): string => {
+                                    let result = '';
+                                    let c = col;
+                                    while (c >= 0) {
+                                        result = String.fromCharCode((c % 26) + 65) + result;
+                                        c = Math.floor(c / 26) - 1;
+                                    }
+                                    return result;
+                                };
+
+                                for (let r = range.s.r; r <= range.e.r; r++) {
+                                    for (let c = range.s.c; c <= range.e.c; c++) {
+                                        const address = `${colToLetter(c)}${r + 1}`;
+                                        const cell = worksheet[address] as any;
+                                        if (cell && (cell.v !== undefined || cell.w !== undefined)) {
+                                            const val = String(cell.w || cell.v);
+
+                                            // Check match
+                                            let isMatch = false;
+                                            if (searchPattern instanceof RegExp) {
+                                                isMatch = searchPattern.test(val);
+                                            } else {
+                                                isMatch = val.toLowerCase().includes(query.toLowerCase());
+                                            }
+
+                                            if (isMatch) {
+                                                matches.push({
+                                                    sheet: sheetName,
+                                                    address,
+                                                    value: val,
+                                                    cellIndex: totalMatches
+                                                });
+                                                totalMatches++;
+                                            }
+                                        }
+                                        if (matches.length >= 50) break;
+                                    }
+                                    if (matches.length >= 50) break;
+                                }
+                                if (matches.length >= 50) break;
+                            }
+
+                            if (matches.length === 0) {
+                                return `No matches found for "${query}" in spreadsheet.`;
+                            }
+
+                            let response = `Found ${matches.length}${matches.length >= 50 ? '+' : ''} matches for "${query}" in spreadsheet:\n\n`;
+                            matches.forEach(m => {
+                                response += `- [📍 ${m.sheet}!${m.address}](spread://${m.sheet}/${m.address}) "${m.value}"\n`;
+                            });
+
+                            // For spreadsheet, we don't have scrolling support yet via goToResult in the same way, 
+                            // but providing the address allows the user to find it.
+                            return response;
+
+                        } catch (err) {
+                            console.error('[keywordSearch] XLSX Error:', err);
+                            return `Error searching spreadsheet: ${err instanceof Error ? err.message : 'Unknown error'}`;
+                        }
+                    }
+
                     // Check if superdoc has search method (SuperDoc has it, CustomDocEditor doesn't)
                     if (typeof superdoc?.search === 'function') {
                         const results: SearchMatch[] = superdoc.search(searchPattern);
@@ -176,6 +253,7 @@ export const getNavigationTools = (context: ToolContext): ToolDefinition[] => {
                 }
             }
         ),
+
         createTool(
             'readFile',
             'Read the content of a file from the workspace by its path. Use this to access files mentioned by the user with @. If path is omitted, reads the active file. For xlsx files, defaults to first sheet only - use sheets parameter to read specific sheet(s). For large documents, content is paginated.',

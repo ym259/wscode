@@ -1,7 +1,6 @@
-'use client';
-
-import React, { useState, useEffect } from 'react';
-import { X, ChevronDown, AlertCircle } from 'lucide-react';
+import React, { useState, useEffect, useCallback } from 'react';
+import { X, ChevronDown, AlertCircle, UploadCloud } from 'lucide-react';
+import { Attachment } from '@/types';
 import { useWorkspace } from '@/contexts/WorkspaceContext';
 import { MentionInput } from './MentionInput';
 import { useAutoScroll } from './useAutoScroll';
@@ -53,15 +52,17 @@ export default function AgentPanel({ isOpen, onClose }: AgentPanelProps) {
     const {
         inputValue,
         setInputValue,
-        selectedImages,
-        setSelectedImages,
         attachedLibraryFiles,
         setAttachedLibraryFiles,
         isLoading,
         isStreaming,
         streamingMsgId,
         handleSubmit,
+
         executeAiAction,
+        attachments,
+        setAttachments,
+        uploadFile,
     } = useAiAgent({
         agentMessages,
         addMessage,
@@ -103,6 +104,103 @@ export default function AgentPanel({ isOpen, onClose }: AgentPanelProps) {
         });
     };
 
+    // Drag and Drop handlers
+    const [isDragging, setIsDragging] = useState(false);
+
+    const handleDragEnter = useCallback((e: React.DragEvent) => {
+        e.preventDefault();
+        e.stopPropagation();
+        setIsDragging(true);
+    }, []);
+
+    const handleDragLeave = useCallback((e: React.DragEvent) => {
+        e.preventDefault();
+        e.stopPropagation();
+        if (e.currentTarget.contains(e.relatedTarget as Node)) return;
+        setIsDragging(false);
+    }, []);
+
+    const handleDragOver = useCallback((e: React.DragEvent) => {
+        e.preventDefault();
+        e.stopPropagation();
+    }, []);
+
+    const handleDrop = useCallback(async (e: React.DragEvent) => {
+        e.preventDefault();
+        e.stopPropagation();
+        setIsDragging(false);
+
+        const files = Array.from(e.dataTransfer.files);
+        if (files.length === 0) return;
+
+        const newAttachments: Attachment[] = [];
+
+        for (const file of files) {
+            try {
+                if (file.type.startsWith('image/')) {
+                    const reader = new FileReader();
+                    const url = await new Promise<string>((resolve) => {
+                        reader.onload = (ev) => resolve(ev.target?.result as string);
+                        reader.readAsDataURL(file);
+                    });
+                    newAttachments.push({
+                        id: crypto.randomUUID(),
+                        type: 'image',
+                        url,
+                        name: file.name,
+                        mimeType: file.type
+                    });
+                } else {
+                    // Upload file to get ID
+                    // TODO: Show uploading state
+                    const fileId = await uploadFile(file);
+                    newAttachments.push({
+                        id: crypto.randomUUID(),
+                        type: 'file',
+                        file_id: fileId,
+                        name: file.name,
+                        mimeType: file.type
+                    });
+                }
+            } catch (error) {
+                console.error('Failed to process file:', file.name, error);
+            }
+        }
+
+        if (newAttachments.length > 0) {
+            setAttachments(prev => [...prev, ...newAttachments]);
+        }
+    }, [uploadFile, setAttachments]);
+
+    const handleAttachmentAdd = useCallback(async (files: { file: File, type: 'image' | 'file', url?: string }[]) => {
+        const newAttachments: Attachment[] = [];
+        for (const f of files) {
+            if (f.type === 'image' && f.url) {
+                newAttachments.push({
+                    id: crypto.randomUUID(),
+                    type: 'image',
+                    url: f.url,
+                    name: f.file.name,
+                    mimeType: f.file.type
+                });
+            } else {
+                try {
+                    const fileId = await uploadFile(f.file);
+                    newAttachments.push({
+                        id: crypto.randomUUID(),
+                        type: 'file',
+                        file_id: fileId,
+                        name: f.file.name,
+                        mimeType: f.file.type
+                    });
+                } catch (error) {
+                    console.error('Failed to upload file:', f.file.name, error);
+                }
+            }
+        }
+        setAttachments(prev => [...prev, ...newAttachments]);
+    }, [uploadFile, setAttachments]);
+
     // Early return AFTER all hooks
     if (!isOpen) return null;
 
@@ -126,10 +224,20 @@ export default function AgentPanel({ isOpen, onClose }: AgentPanelProps) {
             )}
 
             <div
-                className={styles.messages}
+                className={`${styles.messages} ${isDragging ? styles.dragging : ''}`}
                 ref={messagesContainerRef}
                 onScroll={handleScroll}
+                onDragEnter={handleDragEnter}
+                onDragLeave={handleDragLeave}
+                onDragOver={handleDragOver}
+                onDrop={handleDrop}
             >
+                {isDragging && (
+                    <div className={styles.dragOverlay}>
+                        <UploadCloud size={48} className={styles.dragIcon} />
+                        <span>Drop files to attach</span>
+                    </div>
+                )}
                 {agentMessages.length === 0 ? (
                     <EmptyState onSuggestionClick={setInputValue} />
                 ) : (
@@ -176,9 +284,10 @@ export default function AgentPanel({ isOpen, onClose }: AgentPanelProps) {
                     onSubmit={(msg) => handleSubmit(undefined, msg)}
                     disabled={isLoading}
                     workspaceFiles={[...rootItems, ...libraryItems]}
-                    selectedImages={selectedImages}
-                    onImageAdd={(imgs) => setSelectedImages(prev => [...prev, ...imgs])}
-                    onImageRemove={(index) => setSelectedImages(prev => prev.filter((_, i) => i !== index))}
+
+                    attachments={attachments}
+                    onAttachmentAdd={handleAttachmentAdd}
+                    onAttachmentRemove={(index) => setAttachments(prev => prev.filter((_, i) => i !== index))}
                     mentionedFiles={mentionedFiles}
                     onMentionAdd={(file) => setMentionedFiles(prev => [...prev, file])}
                     onMentionRemove={(path) => setMentionedFiles(prev => prev.filter(f => f.path !== path))}

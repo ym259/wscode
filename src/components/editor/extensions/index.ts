@@ -290,28 +290,46 @@ export const CustomParagraph = Paragraph.extend({
                     if (!attributes.lineHeight) {
                         return {};
                     }
-                    // DOCX line height: w:line value is in 240ths of a line
-                    // w:lineRule="auto" means: value / 240 = line height multiplier
-                    // e.g., 275 / 240 = 1.146 (representing "Multiple 1.15" in Word)
-                    //
-                    // IMPORTANT: Word's "Multiple" spacing multiplies the font's NATURAL line height,
-                    // not the font-size. For Japanese fonts, natural line-height is typically ~1.5x font-size.
-                    // CSS line-height multiplies font-size directly.
-                    //
-                    // To match Word: cssLineHeight = (docxMultiplier) * (naturalLineHeight / fontSize)
-                    // For most fonts, naturalLineHeight ≈ 1.2 to 1.5 times fontSize.
-                    // For Hiragino Mincho ProN at 16px, natural is 24px (1.5 ratio).
-                    //
-                    // So: cssLineHeight = (275/240) * 1.3 ≈ 1.49 (using a middle ground factor)
+
                     const lineValue = parseInt(attributes.lineHeight);
-                    const docxMultiplier = lineValue / 240;
-                    // Word's "Multiple" line spacing multiplies the font's natural height (~1.3x),
-                    // not just the font-size. Apply this factor to match Word's rendering.
-                    const baseLineFactor = 1.3;
-                    const cssLineHeight = docxMultiplier * baseLineFactor;
+                    const lineRule = attributes.lineRule || 'auto';
+
+                    let cssValue: string;
+
+                    if (lineRule === 'exact') {
+                        // Fixed line height in points
+                        // For "exact" spacing, lineValue is in twips (1/20 pt)
+                        // This creates a fixed vertical space regardless of font size
+                        const ptValue = lineValue / 20;
+                        cssValue = `${ptValue}pt`;
+                    } else if (lineRule === 'atLeast') {
+                        // Minimum line height
+                        // CSS doesn't have min-line-height, so we use regular line-height
+                        // This enforces minimum but may not expand beyond it like Word does
+                        const ptValue = lineValue / 20;
+                        cssValue = `${ptValue}pt`;
+                    } else {
+                        // lineRule === 'auto' (or default)
+                        // Multiplier mode: lineValue is in 240ths of a line
+                        // e.g., 276 / 240 = 1.15 (representing "Multiple 1.15" in Word)
+                        //
+                        // IMPORTANT: Word's "Multiple" spacing multiplies the font's NATURAL line height,
+                        // not the font-size. For Japanese fonts, natural line-height is typically ~1.5x font-size.
+                        // CSS line-height multiplies font-size directly.
+                        //
+                        // To match Word: cssLineHeight = (docxMultiplier) * (naturalLineHeight / fontSize)
+                        // For most fonts, naturalLineHeight ≈ 1.2 to 1.5 times fontSize.
+                        //
+                        // Using 1.3 as a middle ground factor to approximate Word's behavior
+                        const docxMultiplier = lineValue / 240;
+                        const baseLineFactor = 1.3;
+                        cssValue = (docxMultiplier * baseLineFactor).toFixed(3);
+                    }
+
                     return {
                         'data-line-height': attributes.lineHeight,
-                        style: `line-height: ${cssLineHeight.toFixed(3)};`,
+                        'data-line-rule': lineRule,
+                        style: `line-height: ${cssValue};`,
                     };
                 },
             },
@@ -523,12 +541,18 @@ export const CustomHeading = Heading.extend({
                 }
             },
             // Spacing attributes
+            // Spacing attributes - Render as inline styles
             spacingBefore: {
                 default: null,
                 parseHTML: element => element.getAttribute('data-spacing-before'),
                 renderHTML: attributes => {
                     if (!attributes.spacingBefore) return {};
-                    return { 'data-spacing-before': attributes.spacingBefore };
+                    // Convert twips to pt (twips / 20)
+                    const ptValue = parseInt(attributes.spacingBefore) / 20;
+                    return {
+                        'data-spacing-before': attributes.spacingBefore,
+                        style: `margin-top: ${ptValue}pt;`
+                    };
                 }
             },
             spacingAfter: {
@@ -536,7 +560,59 @@ export const CustomHeading = Heading.extend({
                 parseHTML: element => element.getAttribute('data-spacing-after'),
                 renderHTML: attributes => {
                     if (!attributes.spacingAfter) return {};
-                    return { 'data-spacing-after': attributes.spacingAfter };
+                    // Convert twips to pt (twips / 20)
+                    const ptValue = parseInt(attributes.spacingAfter) / 20;
+                    return {
+                        'data-spacing-after': attributes.spacingAfter,
+                        style: `margin-bottom: ${ptValue}pt;`
+                    };
+                }
+            },
+            // Line Height / Line Rule
+            lineHeight: {
+                default: 'auto',
+                parseHTML: element => element.getAttribute('data-line-height'),
+                renderHTML: attributes => {
+                    // Removed early return to enforce default styles and tooltip
+                    // if (!attributes.lineHeight) return {};
+
+                    const lineValue = parseInt(attributes.lineHeight) || 240; // Default to 240 (100%)
+                    const lineRule = attributes.lineRule || 'auto';
+                    let cssValue = '2.0'; // Default fallback matching baseLineFactor
+
+                    // Debug: Add visible tooltip to inspect values
+                    const debugTitle = `SB:${attributes.spacingBefore || '-'} SA:${attributes.spacingAfter || '-'} LH:${attributes.lineHeight || '-'} LR:${lineRule}`;
+
+                    if (lineRule === 'exact') {
+                        // Fixed line height in points (twips / 20)
+                        const ptValue = lineValue / 20;
+                        cssValue = `${ptValue}pt`;
+                    } else if (lineRule === 'atLeast') {
+                        // Minimum line height
+                        const ptValue = lineValue / 20;
+                        cssValue = `${ptValue}pt`;
+                    } else {
+                        // lineRule === 'auto' (Multiplier mode 240ths)
+                        // Increased from 1.3 to 2.0 to better match Japanese line spacing expectations
+                        const docxMultiplier = lineValue / 240;
+                        const baseLineFactor = 2.0;
+                        cssValue = (docxMultiplier * baseLineFactor).toFixed(3);
+                    }
+
+                    return {
+                        'data-line-height': attributes.lineHeight,
+                        'data-line-rule': lineRule,
+                        style: `line-height: ${cssValue};`,
+                        title: debugTitle, // Debug tooltip
+                    };
+                },
+            },
+            lineRule: {
+                default: null,
+                parseHTML: element => element.getAttribute('data-line-rule'),
+                renderHTML: attributes => {
+                    if (!attributes.lineRule) return {};
+                    return { 'data-line-rule': attributes.lineRule };
                 }
             },
             // Paragraph default font properties for DOCX w:pPr/w:rPr
@@ -571,6 +647,15 @@ export const CustomHeading = Heading.extend({
                 renderHTML: attributes => {
                     if (attributes.keepLines === null) return {};
                     return { 'data-keep-lines': attributes.keepLines };
+                }
+            },
+            // Contextual spacing (remove space between same-style paragraphs)
+            contextualSpacing: {
+                default: null,
+                parseHTML: element => element.getAttribute('data-contextual-spacing'),
+                renderHTML: attributes => {
+                    if (!attributes.contextualSpacing) return {};
+                    return { 'data-contextual-spacing': attributes.contextualSpacing };
                 }
             },
         };

@@ -14,11 +14,10 @@ export async function POST(req: NextRequest, props: { params: Promise<{ path?: s
     }
 
     try {
-        const body = await req.json();
 
         // If no path is provided, this is a SuperDoc AI direct request
-        // Handle it by making a chat completion call with the provided messages
         if (!path) {
+            const body = await req.json();
             console.log('[API/AI] Handling SuperDoc AI direct request');
             const { messages, prompt, context } = body;
 
@@ -56,7 +55,7 @@ ${context || 'No context provided.'}`;
 
             if (!response.ok) {
                 const errorText = await response.text();
-                console.error('[API/AI] OpenAI error:', errorText);
+                // console.error('[API/AI] OpenAI error:', errorText);
                 return NextResponse.json({ error: errorText }, { status: response.status });
             }
 
@@ -69,13 +68,26 @@ ${context || 'No context provided.'}`;
         const url = `https://api.openai.com/v1/${path}`;
         console.log('[API/AI Proxy] Forwarding POST request to:', url);
 
+        const contentType = req.headers.get('content-type') || '';
+        let body: BodyInit | null = null;
+        const headers: Record<string, string> = {
+            'Authorization': `Bearer ${apiKey}`,
+        };
+
+        if (contentType.includes('multipart/form-data')) {
+            // Forward raw body and content-type (boundary is crucial)
+            body = req.body;
+            headers['Content-Type'] = contentType;
+        } else {
+            const jsonBody = await req.json();
+            body = JSON.stringify(jsonBody);
+            headers['Content-Type'] = 'application/json';
+        }
+
         const upstreamResponse = await fetch(url, {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${apiKey}`,
-            },
-            body: JSON.stringify(body),
+            headers,
+            body,
         });
 
         return new NextResponse(upstreamResponse.body, {

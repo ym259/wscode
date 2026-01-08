@@ -12,7 +12,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { AIActions, createAIProvider } from '@superdoc-dev/ai';
-import { ChatMessage, AgentEvent } from '@/types';
+import { ChatMessage, AgentEvent, Attachment } from '@/types';
 
 import { UniversalAgentConfig } from './universal-agent/types';
 import { detectFileType, buildToolContext } from './universal-agent/context';
@@ -28,9 +28,11 @@ export type { UniversalAgentConfig, FileType } from './universal-agent/types';
 function buildUserMessage(
     prompt: string,
     images?: string[],
-    pdfFiles?: Array<{ file_id: string; filename: string }>
+    attachments?: Attachment[],
+    pdfFiles?: Array<{ file_id: string; filename: string }>,
+    imageFiles?: Array<{ file_id: string; filename: string }>
 ): { type: 'message'; role: 'user'; content: any } {
-    const hasMultimodal = (images && images.length > 0) || (pdfFiles && pdfFiles.length > 0);
+    const hasMultimodal = (images && images.length > 0) || (pdfFiles && pdfFiles.length > 0) || (imageFiles && imageFiles.length > 0) || (attachments && attachments.length > 0);
 
     if (!hasMultimodal) {
         return { type: 'message', role: 'user', content: prompt };
@@ -45,10 +47,35 @@ function buildUserMessage(
         }
     }
 
-    // Add images
+    // Add Attachments (files)
+    if (attachments && attachments.length > 0) {
+        for (const att of attachments) {
+            if (att.type === 'file' && att.file_id) {
+                content.push({ type: 'input_file', file_id: att.file_id });
+            }
+        }
+    }
+
+    // Add images (from direct user input)
     if (images && images.length > 0) {
         for (const img of images) {
             content.push({ type: 'input_image', image_url: img });
+        }
+    }
+
+    // Add image files (from tools)
+    if (imageFiles && imageFiles.length > 0) {
+        for (const img of imageFiles) {
+            content.push({ type: 'input_image', file_id: img.file_id });
+        }
+    }
+
+    // Add Attachments (images)
+    if (attachments && attachments.length > 0) {
+        for (const att of attachments) {
+            if (att.type === 'image' && att.url) {
+                content.push({ type: 'input_image', image_url: att.url });
+            }
         }
     }
 
@@ -77,7 +104,8 @@ export function useUniversalAgent(config: UniversalAgentConfig) {
         setVoiceToolHandler,
         setCellValue,
         openFileInEditor,
-        addFileToWorkspace
+        addFileToWorkspace,
+        getWorkbook
     } = config;
 
     const activeFileType = config.activeFileType || detectFileType(activeFilePath);
@@ -92,6 +120,15 @@ export function useUniversalAgent(config: UniversalAgentConfig) {
     const addLoadedPdfFile = useCallback((file: { file_id: string; filename: string }) => {
         console.log('[UniversalAgent] PDF loaded for injection:', file.filename, file.file_id);
         loadedPdfFilesRef.current.push(file);
+    }, []);
+
+    // Track loaded Image file_ids (from tools)
+    const loadedImageFilesRef = useRef<Array<{ file_id: string; filename: string }>>([]);
+
+    // Callback to register an Image file for injection
+    const addLoadedImageFile = useCallback((file: { file_id: string; filename: string }) => {
+        console.log('[UniversalAgent] Image loaded for injection:', file.filename, file.file_id);
+        loadedImageFilesRef.current.push(file);
     }, []);
 
     // Determine which editor mode we're in
@@ -121,7 +158,7 @@ export function useUniversalAgent(config: UniversalAgentConfig) {
                 setIsAiInitialized(true);
                 return;
             }
-            
+
             // Log why we're not ready
             if (isReady && !activeFileType) {
                 console.log('[UniversalAgent] Waiting for workspace files...', { workspaceFiles: workspaceFiles?.length || 0 });
@@ -176,7 +213,8 @@ export function useUniversalAgent(config: UniversalAgentConfig) {
         prompt: string,
         history: ChatMessage[],
         onUpdate: (event: AgentEvent) => void,
-        images?: string[]
+        images?: string[],
+        attachments?: Attachment[]
     ) => {
         if (!isReady) {
             console.warn('[UniversalAgent] Not ready.');
@@ -208,7 +246,9 @@ export function useUniversalAgent(config: UniversalAgentConfig) {
                 setCellValue,
                 openFileInEditor,
                 addFileToWorkspace,
-                addLoadedPdfFile
+                addLoadedPdfFile,
+                addLoadedImageFile,
+                getWorkbook
             };
             const context = buildToolContext(contextConfig, aiActionsRef.current);
 
@@ -250,7 +290,7 @@ export function useUniversalAgent(config: UniversalAgentConfig) {
             console.log('[UniversalAgent] System prompt preview:', systemPrompt.substring(0, 1500));
             console.log('[UniversalAgent] User prompt:', prompt);
             console.log('[UniversalAgent] Has listFolder tool?', toolDefinitions.some(t => t.function.name === 'listFolder'));
-            
+
             // Log the full tool definitions for listFolder
             const listFolderTool = toolDefinitions.find(t => t.function.name === 'listFolder');
             if (listFolderTool) {
@@ -314,13 +354,17 @@ export function useUniversalAgent(config: UniversalAgentConfig) {
                     }
                     return items;
                 }),
-                buildUserMessage(prompt, images, loadedPdfFilesRef.current)
+                buildUserMessage(prompt, images, attachments, loadedPdfFilesRef.current, loadedImageFilesRef.current)
             ];
 
-            // Clear loaded PDFs after injecting them into the message
+            // Clear loaded PDFs/Images after injecting them into the message
             if (loadedPdfFilesRef.current.length > 0) {
                 console.log('[UniversalAgent] Injected', loadedPdfFilesRef.current.length, 'PDF(s) into message');
                 loadedPdfFilesRef.current = [];
+            }
+            if (loadedImageFilesRef.current.length > 0) {
+                console.log('[UniversalAgent] Injected', loadedImageFilesRef.current.length, 'Image(s) into message');
+                loadedImageFilesRef.current = [];
             }
 
             // Convert tools to Responses API format
@@ -482,6 +526,30 @@ export function useUniversalAgent(config: UniversalAgentConfig) {
                     // Clear the loaded PDFs
                     loadedPdfFilesRef.current = [];
                 }
+
+                // If any Images were loaded during this loop iteration
+                if (loadedImageFilesRef.current.length > 0) {
+                    console.log('[UniversalAgent] Injecting', loadedImageFilesRef.current.length, 'Image(s) loaded during tool execution');
+
+                    // Add a message with the Image files attached
+                    const imgContent: any[] = loadedImageFilesRef.current.map(img => ({
+                        type: 'input_image',
+                        file_id: img.file_id
+                    }));
+                    imgContent.push({
+                        type: 'input_text',
+                        text: `[System: The following Image file(s) have been generated and loaded: ${loadedImageFilesRef.current.map(p => p.filename).join(', ')}. Analyze them.]`
+                    });
+
+                    messages.push({
+                        type: 'message',
+                        role: 'user',
+                        content: imgContent
+                    });
+
+                    // Clear the loaded Images
+                    loadedImageFilesRef.current = [];
+                }
             }
 
             onUpdate({ type: 'run_completed', timestamp: Date.now() });
@@ -502,9 +570,10 @@ export function useUniversalAgent(config: UniversalAgentConfig) {
         prompt: string,
         history: ChatMessage[],
         onUpdate: (event: AgentEvent) => void,
-        images?: string[]
+        images?: string[],
+        attachments?: Attachment[]
     ) => {
-        return handleAiActionRef.current(prompt, history, onUpdate, images);
+        return handleAiActionRef.current(prompt, history, onUpdate, images, attachments);
     }, []);
 
     // Track if we've registered the handler

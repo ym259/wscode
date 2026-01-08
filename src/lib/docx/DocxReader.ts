@@ -17,6 +17,7 @@ export class DocxReader {
             lvlText: string;
             start: number;
             indent?: { left?: string; hanging?: string; firstLine?: string };
+            font?: string;
         }>;
     }> = {};
 
@@ -98,6 +99,19 @@ export class DocxReader {
                             widowControl: widowControl['w:val'] || widowControl['val']
                         };
                     }
+
+                    // Extract default spacing
+                    const sp = pPr['w:spacing'] || pPr['spacing'];
+                    if (sp) {
+                        if (!this.docDefaults.pPr) this.docDefaults.pPr = {};
+                        this.docDefaults.pPr.spacing = {
+                            before: sp['w:before'] || sp['before'],
+                            after: sp['w:after'] || sp['after'],
+                            line: sp['w:line'] || sp['line'],
+                            lineRule: sp['w:lineRule'] || sp['lineRule']
+                        };
+                        console.log('DEBUG parseStyles: Found docDefaults spacing:', this.docDefaults.pPr.spacing);
+                    }
                 }
             }
         }
@@ -111,10 +125,15 @@ export class DocxReader {
             if (styleId) {
                 const nameNode = style['w:name'] || style['name'];
                 const type = style['w:type'] || style['type'];
+                const basedOnNode = style['w:basedOn'] || style['basedOn'];
+                const basedOn = basedOnNode?.['w:val'] || basedOnNode?.['val'];
+
                 const pPr = style['w:pPr'] || style['pPr'];
                 let indent: any = null;
+                let spacing: any = null;
 
                 if (pPr) {
+                    // Extract indent
                     const ind = pPr['w:ind'] || pPr['ind'];
                     if (ind) {
                         indent = {
@@ -123,13 +142,31 @@ export class DocxReader {
                             firstLine: ind['w:firstLine'] || ind['firstLine']
                         };
                     }
+
+                    // Extract spacing (spacingBefore, spacingAfter, lineHeight, lineRule)
+                    const sp = pPr['w:spacing'] || pPr['spacing'];
+                    if (sp) {
+                        spacing = {
+                            before: sp['w:before'] || sp['before'],
+                            after: sp['w:after'] || sp['after'],
+                            line: sp['w:line'] || sp['line'],
+                            lineRule: sp['w:lineRule'] || sp['lineRule']
+                        };
+                    }
                 }
 
                 this.stylesMap[styleId] = {
                     name: nameNode?.['w:val'] || nameNode?.['val'],
+                    basedOn,
                     type: type,
-                    indent
+                    indent,
+                    spacing
                 };
+
+                // DEBUG: Log style spacing info
+                if (spacing || basedOn) {
+                    console.log('DEBUG parseStyles: Style info:', { styleId, name: nameNode?.['w:val'] || nameNode?.['val'], basedOn, spacing });
+                }
             }
         });
     }
@@ -284,6 +321,20 @@ export class DocxReader {
                                             hanging: indAttrs['w:hanging'] || indAttrs['hanging'],
                                             firstLine: indAttrs['w:firstLine'] || indAttrs['firstLine']
                                         };
+                                    }
+                                });
+                            }
+                            // Capture font for bullet character (used for Wingdings/Symbol conversion)
+                            if (propKey === 'w:rPr' || propKey === 'rPr') {
+                                const rPrContent = prop[propKey];
+                                rPrContent.forEach((rPrItem: any) => {
+                                    const rPrKey = Object.keys(rPrItem)[0];
+                                    if (rPrKey === 'w:rFonts' || rPrKey === 'rFonts') {
+                                        const rFonts = rPrItem[':@'] || {};
+                                        // Try different font attributes in order of preference
+                                        levelDef.font = rFonts['w:ascii'] || rFonts['ascii'] ||
+                                            rFonts['w:hAnsi'] || rFonts['hAnsi'] ||
+                                            rFonts['w:eastAsia'] || rFonts['eastAsia'];
                                     }
                                 });
                             }
@@ -690,7 +741,7 @@ export class DocxReader {
 
         for (const item of items) {
             if (item.listInfo) {
-                const { numId, ilvl, isOrdered, numFmt, lvlText, numIndent } = item.listInfo;
+                const { numId, ilvl, isOrdered, numFmt, lvlText, numIndent, font } = item.listInfo;
 
                 // Initialize counter state for this numId if needed
                 if (!counterState[numId]) {
@@ -712,7 +763,7 @@ export class DocxReader {
                 activeNumIds.add(numId);
 
                 // Generate the full marker text for special formats
-                const markerText = this.generateMarkerText(numFmt || 'decimal', lvlText, counterValue);
+                const markerText = this.generateMarkerText(numFmt || 'decimal', lvlText, counterValue, ilvl, font);
 
                 // Create paragraph with numbering metadata (no listItem wrapper)
                 const paragraph = {
@@ -748,19 +799,115 @@ export class DocxReader {
     }
 
     /**
+     * Convert Wingdings/Symbol font characters to Unicode equivalents.
+     * Many DOCX files use Wingdings or Symbol fonts for bullets, which need conversion.
+     */
+    private convertSymbolFontToUnicode(char: string, font: string | undefined): string {
+        if (!font) return char;
+
+        const fontLower = font.toLowerCase();
+
+        // Wingdings character mappings (most common bullet characters)
+        if (fontLower.includes('wingdings')) {
+            const charCode = char.charCodeAt(0);
+            const wingdingsMap: Record<number, string> = {
+                0xF06F: '■',  // Black square
+                0xF070: '□',  // White square
+                0xF071: '❏',  // Square with shadow
+                0xF074: '❑',  // Square with rounded corners
+                0xF075: '▪',  // Small black square
+                0xF076: '▫',  // Small white square
+                0xF077: '◾',  // Black medium small square
+                0xF078: '◽',  // White medium small square
+                0xF0A7: '■',  // Black square
+                0xF0A8: '○',  // White circle
+                0xF0B7: '•',  // Bullet (most common!)
+                0xF0D8: '○',  // White circle
+                0xF0E0: '◆',  // Black diamond
+                0xF0FC: '☑',  // Checked box
+                0xF0FD: '☐',  // Empty box
+                // Also check for characters in normal ASCII range that Wingdings remaps
+                111: '■',     // 'o' in Wingdings
+                167: '■',     // § in Wingdings
+                183: '•',     // · in Wingdings (middle dot -> bullet)
+            };
+
+            if (wingdingsMap[charCode]) {
+                return wingdingsMap[charCode];
+            }
+        }
+
+        // Symbol font mappings
+        if (fontLower.includes('symbol')) {
+            const charCode = char.charCodeAt(0);
+            const symbolMap: Record<number, string> = {
+                0xB7: '•',    // Middle dot -> bullet
+                0x2022: '•',  // Already bullet
+                0x25CB: '○',  // White circle
+                0x25CF: '●',  // Black circle
+            };
+
+            if (symbolMap[charCode]) {
+                return symbolMap[charCode];
+            }
+        }
+
+        // If character is already in the "Private Use Area" (0xE000-0xF8FF),
+        // it's likely a symbol font character that needs conversion
+        const charCode = char.charCodeAt(0);
+        if (charCode >= 0xE000 && charCode <= 0xF8FF) {
+            // Common private use mappings for bullets
+            const privateUseMap: Record<number, string> = {
+                0xF0B7: '•',  // Most common bullet
+                0xF06F: '■',  // Square
+                0xF0A7: '■',  // Square
+                0xF0D8: '○',  // Circle
+            };
+
+            return privateUseMap[charCode] || '•'; // Default to bullet for unknown PUA chars
+        }
+
+        return char;
+    }
+
+    /**
      * Generate the full marker text for a list item.
      * Handles special formats like ideographTraditional (甲乙丙丁) that CSS can't generate.
      */
-    private generateMarkerText(numFmt: string, lvlText: string | undefined, counterValue: number): string {
+    private generateMarkerText(numFmt: string, lvlText: string | undefined, counterValue: number, ilvl: number = 0, font?: string): string {
         // Heavenly Stems (天干) for ideographTraditional: 甲乙丙丁戊己庚辛壬癸
         const heavenlyStems = ['甲', '乙', '丙', '丁', '戊', '己', '庚', '辛', '壬', '癸'];
 
         // Earthly Branches (地支) for some other formats: 子丑寅卯辰巳午未申酉戌亥
         // const earthlyBranches = ['子', '丑', '寅', '卯', '辰', '巳', '午', '未', '申', '酉', '戌', '亥'];
 
+        // Default bullet characters for different nesting levels (matching Word's defaults)
+        const defaultBullets = [
+            '•',  // Level 0: U+2022 BULLET
+            '○',  // Level 1: U+25CB WHITE CIRCLE
+            '■',  // Level 2: U+25A0 BLACK SQUARE
+            '□',  // Level 3: U+25A1 WHITE SQUARE
+            '▪',  // Level 4: U+25AA BLACK SMALL SQUARE
+            '▫',  // Level 5: U+25AB WHITE SMALL SQUARE
+            '◆',  // Level 6: U+25C6 BLACK DIAMOND
+            '◇',  // Level 7: U+25C7 WHITE DIAMOND
+            '►',  // Level 8: U+25BA BLACK RIGHT-POINTING POINTER
+        ];
+
         let baseMarker: string;
 
         switch (numFmt) {
+            case 'bullet':
+                // For bullet lists, lvlText contains the actual bullet character
+                if (lvlText && !lvlText.includes('%')) {
+                    // Convert Wingdings/Symbol characters to Unicode equivalents
+                    return this.convertSymbolFontToUnicode(lvlText, font);
+                } else {
+                    // Fallback to standard bullets based on indent level (ilvl)
+                    // ilvl is 0-based, so we use it directly as array index
+                    const bulletIndex = ilvl % defaultBullets.length;
+                    return defaultBullets[bulletIndex];
+                }
             case 'ideographTraditional':
                 // Use Heavenly Stems: 甲, 乙, 丙, 丁, 戊, 己, 庚, 辛, 壬, 癸
                 baseMarker = heavenlyStems[(counterValue - 1) % heavenlyStems.length] || String(counterValue);
@@ -1001,7 +1148,9 @@ export class DocxReader {
                                 lvlText: levelDef?.lvlText,
                                 start: levelDef?.start,
                                 // Include indent from numbering definition if not overridden
-                                numIndent: levelDef?.indent
+                                numIndent: levelDef?.indent,
+                                // Include font for Wingdings/Symbol conversion
+                                font: levelDef?.font
                             };
                         }
                     }
@@ -1015,9 +1164,17 @@ export class DocxReader {
 
                             const styleDef = this.stylesMap[val];
                             // Check 1: Style Name (e.g. "Heading 1")
-                            if (styleDef && styleDef.name && styleDef.name.toLowerCase().startsWith('heading')) {
-                                const level = parseInt(styleDef.name.split(' ')[1]);
-                                if (!isNaN(level)) attrs.level = level;
+                            if (styleDef && styleDef.name) {
+                                const lowerName = styleDef.name.toLowerCase();
+                                if (lowerName.startsWith('heading')) {
+                                    const level = parseInt(lowerName.split(' ')[1]);
+                                    if (!isNaN(level)) attrs.level = level;
+                                } else if (lowerName.startsWith('見出し')) {
+                                    // Support Japanese headings (e.g., "見出し 1")
+                                    const levelStr = lowerName.replace('見出し', '').trim();
+                                    const level = parseInt(levelStr);
+                                    if (!isNaN(level)) attrs.level = level;
+                                }
                             }
                             // Check 2: Style ID (e.g. "Heading1", "Heading2") - case insensitive check
                             else {
@@ -1040,6 +1197,44 @@ export class DocxReader {
                                         };
                                     }
                                 }
+                            }
+
+                            // Resolve effective spacing from style chain and defaults
+                            let effectiveSpacing = { ...(this.docDefaults.pPr?.spacing || {}) };
+
+                            // Build style chain to resolve inheritance (from base to specific)
+                            const chain: any[] = [];
+                            let currentStyleId = val;
+                            const visited = new Set();
+
+                            while (currentStyleId && this.stylesMap[currentStyleId] && !visited.has(currentStyleId)) {
+                                chain.unshift(this.stylesMap[currentStyleId]); // Add to start to process base first
+                                visited.add(currentStyleId);
+                                currentStyleId = this.stylesMap[currentStyleId].basedOn;
+                            }
+
+                            // Merge spacing from chain
+                            chain.forEach(style => {
+                                if (style.spacing) {
+                                    effectiveSpacing = { ...effectiveSpacing, ...style.spacing };
+                                }
+                            });
+
+                            // Apply resolved spacing to attributes if not overridden by direct formatting
+                            if (effectiveSpacing) {
+                                if (!attrs.spacingBefore && effectiveSpacing.before) {
+                                    attrs.spacingBefore = effectiveSpacing.before;
+                                }
+                                if (!attrs.spacingAfter && effectiveSpacing.after) {
+                                    attrs.spacingAfter = effectiveSpacing.after;
+                                }
+                                if (!attrs.lineHeight && effectiveSpacing.line) {
+                                    attrs.lineHeight = effectiveSpacing.line;
+                                }
+                                if (!attrs.lineRule && effectiveSpacing.lineRule) {
+                                    attrs.lineRule = effectiveSpacing.lineRule;
+                                }
+                                console.log('DEBUG parseParagraph: Resolved effective spacing for style ' + val + ':', effectiveSpacing);
                             }
                         }
                     }
@@ -1071,6 +1266,9 @@ export class DocxReader {
                         if (before) attrs.spacingBefore = before;
                         if (after) attrs.spacingAfter = after;
                         if (lineRule) attrs.lineRule = lineRule;
+
+                        // DEBUG: Log direct spacing values
+                        console.log('DEBUG parseParagraph: Direct spacing found:', { before, after, line, lineRule });
                     }
 
                     // Contextual Spacing
@@ -1100,9 +1298,24 @@ export class DocxReader {
 
                     // Shading (Background)
                     if (propKey === 'w:shd' || propKey === 'shd') {
-                        const fill = prop[':@']?.['w:fill'] || prop[':@']?.['fill'];
-                        if (fill && fill !== 'auto') attrs.backgroundColor = `#${fill}`;
+                        const val = prop[':@']?.['w:fill'] || prop[':@']?.['fill'];
+                        if (val && val !== 'auto') attrs.shading = val;
                     }
+
+                    // Outline Level (Detect headings by outline level)
+                    if (propKey === 'w:outlineLvl' || propKey === 'outlineLvl') {
+                        const val = prop[':@']?.['w:val'] || prop[':@']?.['val'];
+                        if (val) {
+                            const level = parseInt(val);
+                            if (!isNaN(level) && level >= 0 && level <= 9) {
+                                // Outline level 0 = Heading 1, 1 = Heading 2, etc.
+                                // We typically support levels 1-6 in the editor
+                                attrs.level = Math.min(level + 1, 6);
+                                console.log('DEBUG parseParagraph: Detected heading via outlineLvl:', level, '-> Heading', attrs.level);
+                            }
+                        }
+                    }
+
 
                     // Section Properties (SectPr) - Check for Section Break
                     if (propKey === 'w:sectPr' || propKey === 'sectPr') {
@@ -1123,6 +1336,16 @@ export class DocxReader {
                         }
                     }
                 });
+            }
+
+            // Fallback: If no style was explicitly applied, inherit from docDefaults
+            if (!attrs.styleId && this.docDefaults.pPr && this.docDefaults.pPr.spacing) {
+                const def = this.docDefaults.pPr.spacing;
+                if (!attrs.spacingBefore && def.before) attrs.spacingBefore = def.before;
+                if (!attrs.spacingAfter && def.after) attrs.spacingAfter = def.after;
+                if (!attrs.lineHeight && def.line) attrs.lineHeight = def.line;
+                if (!attrs.lineRule && def.lineRule) attrs.lineRule = def.lineRule;
+                console.log('DEBUG parseParagraph: Applied docDefaults to unstyled paragraph:', def);
             }
 
             if (rKey) {
@@ -1258,6 +1481,19 @@ export class DocxReader {
             attrs,
             content: validChildren.length ? validChildren : undefined
         };
+
+        // DEBUG: Log paragraphs with spacing attributes
+        if (attrs.spacingBefore || attrs.spacingAfter) {
+            const textContent = validChildren.map((c: any) => c.text || '').join('').substring(0, 30);
+            console.log('DEBUG parseParagraph FINAL:', {
+                type: finalType,
+                spacingBefore: attrs.spacingBefore,
+                spacingAfter: attrs.spacingAfter,
+                styleId: attrs.styleId,
+                listNumId: attrs.listNumId,
+                textPreview: textContent
+            });
+        }
 
         if (attrs.listInfo) {
             result.listInfo = attrs.listInfo;

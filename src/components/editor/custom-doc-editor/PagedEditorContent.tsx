@@ -277,6 +277,50 @@ export const PagedEditorContent: React.FC<PagedEditorContentProps> = ({
         calculatePages();
     }, [docAttrs, calculatePages]);
 
+    // Apply contextual spacing (collapse margins between same-style paragraphs)
+    React.useEffect(() => {
+        if (!editor || !editorContainerRef.current) return;
+
+        const proseMirrorEl = editorContainerRef.current.querySelector('.ProseMirror');
+        if (!proseMirrorEl) return;
+
+        // Find all paragraphs and headings with contextual spacing enabled
+        const elements = proseMirrorEl.querySelectorAll('[data-contextual-spacing="1"]');
+
+        elements.forEach((el) => {
+            const currentStyleId = el.getAttribute('data-style-id');
+            if (!currentStyleId) return;
+
+            // Look at next sibling
+            const nextEl = el.nextElementSibling;
+            if (!nextEl) return;
+
+            const nextStyleId = nextEl.getAttribute('data-style-id');
+            const nextContextual = nextEl.getAttribute('data-contextual-spacing');
+
+            // If next element has same style and also has contextual spacing
+            if (nextStyleId === currentStyleId && nextContextual === '1') {
+                // Collapse spacing: remove bottom margin of current, top margin of next
+                (el as HTMLElement).style.marginBottom = '0';
+                (nextEl as HTMLElement).style.marginTop = '0';
+            } else {
+                // Reset margins if styles don't match (in case content changed)
+                // This ensures margins are restored if the next paragraph style changed
+                const originalSpacingAfter = el.getAttribute('data-spacing-after');
+                const nextSpacingBefore = nextEl.getAttribute('data-spacing-before');
+
+                if (originalSpacingAfter) {
+                    const ptValue = parseInt(originalSpacingAfter) / 20;
+                    (el as HTMLElement).style.marginBottom = `${ptValue}pt`;
+                }
+                if (nextSpacingBefore) {
+                    const ptValue = parseInt(nextSpacingBefore) / 20;
+                    (nextEl as HTMLElement).style.marginTop = `${ptValue}pt`;
+                }
+            }
+        });
+    }, [editor, trackChangesDisplayMode]); // Re-run when editor or display mode changes
+
     return (
         <>
             <div
