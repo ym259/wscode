@@ -160,7 +160,8 @@ export class DocxReader {
                     basedOn,
                     type: type,
                     indent,
-                    spacing
+                    spacing,
+                    runProps: this.parseRunProperties(style)
                 };
 
                 // DEBUG: Log style spacing info
@@ -169,6 +170,84 @@ export class DocxReader {
                 }
             }
         });
+    }
+
+    private parseRunProperties(node: any): any {
+        const rPr = node['w:rPr'] || node['rPr'];
+        if (!rPr) return null;
+
+        const props: any = {};
+
+        // If strict mode array (unlikely with current parser config but handled for safety)
+        if (Array.isArray(rPr)) {
+            // Helper to get val from array
+            const getVal = (arr: any[], keyName: string) => {
+                const item = arr.find((x: any) => x[`w:${keyName}`] || x[keyName]);
+                return item ? (item[':@']?.['w:val'] || item[':@']?.['val']) : null;
+            };
+            const hasProp = (arr: any[], keyName: string) => {
+                return arr.some((x: any) => x[`w:${keyName}`] || x[keyName]);
+            };
+
+            // Font Size
+            const szVal = getVal(rPr, 'sz');
+            if (szVal) props.fontSize = `${parseInt(szVal) / 2}pt`;
+
+            // Color
+            const colorVal = getVal(rPr, 'color');
+            if (colorVal && colorVal !== 'auto') props.color = `#${colorVal}`;
+
+            // Fonts
+            const fontsItem = rPr.find((x: any) => x['w:rFonts'] || x['rFonts']);
+            if (fontsItem) {
+                const attrs = fontsItem[':@'] || {};
+                const font = attrs['w:eastAsia'] || attrs['eastAsia'] || attrs['w:ascii'] || attrs['ascii'];
+                if (font) props.fontFamily = font;
+            }
+
+            // Bold, Italic, Underline, Strike
+            if (hasProp(rPr, 'b')) props.bold = true;
+            if (hasProp(rPr, 'i')) props.italic = true;
+            if (hasProp(rPr, 'u')) props.underline = true;
+            if (hasProp(rPr, 'strike')) props.strike = true;
+        } else {
+            // Object mode (Standard parser)
+            // With ignoreAttributes: false, attributes are in the object keys if not prefixed, or we need to check parser config.
+            // Config: ignoreAttributes: false, attributeNamePrefix: ''. 
+            // So <w:sz w:val="32"/> -> { "w:sz": { "w:val": "32" } }
+
+            // Helper to safely get value from node
+            const getAttrVal = (node: any) => node?.['w:val'] || node?.['val'];
+
+            // Font Size
+            const sz = rPr['w:sz'] || rPr['sz'];
+            if (sz) {
+                const val = getAttrVal(sz);
+                if (val) props.fontSize = `${parseInt(val) / 2}pt`;
+            }
+
+            // Color
+            const color = rPr['w:color'] || rPr['color'];
+            if (color) {
+                const val = getAttrVal(color);
+                if (val && val !== 'auto') props.color = `#${val}`;
+            }
+
+            // Fonts
+            const rFonts = rPr['w:rFonts'] || rPr['rFonts'];
+            if (rFonts) {
+                const font = rFonts['w:eastAsia'] || rFonts['eastAsia'] || rFonts['w:ascii'] || rFonts['ascii'];
+                if (font) props.fontFamily = font;
+            }
+
+            // Bold, Italic, Underline, Strike
+            if ((rPr['w:b'] || rPr['b']) !== undefined) props.bold = true;
+            if ((rPr['w:i'] || rPr['i']) !== undefined) props.italic = true;
+            if ((rPr['w:u'] || rPr['u']) !== undefined) props.underline = true;
+            if ((rPr['w:strike'] || rPr['strike']) !== undefined) props.strike = true;
+        }
+
+        return props;
     }
 
     /**
@@ -1032,12 +1111,10 @@ export class DocxReader {
         const paragraphDefaults: { fontSize?: string; fontFamily?: string } = {};
 
         // Apply document default font size if available (w:sz value in half-points)
-        if (this.docDefaults?.sz) {
-            const szVal = this.docDefaults.sz['w:val'] || this.docDefaults.sz['val'];
-            if (szVal) {
-                paragraphDefaults.fontSize = `${parseInt(szVal) / 2}pt`;
-            }
-        }
+        // Apply document default font size if available (w:sz value in half-points)
+        // MOVED: We now handle docDefaults as part of style resolution or fallback
+        // to ensure Style > DocDefaults precedence.
+        // if (this.docDefaults?.sz) { ... }
 
         // First pass: extract paragraph defaults from w:pPr/w:rPr
         nodeContent.forEach(item => {
@@ -1070,13 +1147,7 @@ export class DocxReader {
             }
         });
 
-        // Store paragraph defaults as attrs for serialization
-        if (paragraphDefaults.fontSize) {
-            attrs.pPrFontSize = paragraphDefaults.fontSize;
-        }
-        if (paragraphDefaults.fontFamily) {
-            attrs.pPrFontFamily = paragraphDefaults.fontFamily;
-        }
+
 
         nodeContent.forEach(item => {
             const keys = Object.keys(item);
@@ -1202,6 +1273,20 @@ export class DocxReader {
                             // Resolve effective spacing from style chain and defaults
                             let effectiveSpacing = { ...(this.docDefaults.pPr?.spacing || {}) };
 
+                            // Initialize with docDefaults for run props
+                            let effectiveRunProps: any = {};
+                            if (this.docDefaults) {
+                                if (this.docDefaults.sz) {
+                                    const val = this.docDefaults.sz['w:val'] || this.docDefaults.sz['val'];
+                                    if (val) effectiveRunProps.fontSize = `${parseInt(val) / 2}pt`;
+                                }
+                                if (this.docDefaults.rFonts) {
+                                    const fonts = this.docDefaults.rFonts;
+                                    const val = fonts[':@']?.['w:eastAsia'] || fonts[':@']?.['eastAsia'] || fonts[':@']?.['w:ascii'] || fonts[':@']?.['ascii'];
+                                    if (val) effectiveRunProps.fontFamily = val;
+                                }
+                            }
+
                             // Build style chain to resolve inheritance (from base to specific)
                             const chain: any[] = [];
                             let currentStyleId = val;
@@ -1213,10 +1298,13 @@ export class DocxReader {
                                 currentStyleId = this.stylesMap[currentStyleId].basedOn;
                             }
 
-                            // Merge spacing from chain
+                            // Merge properties from chain
                             chain.forEach(style => {
                                 if (style.spacing) {
                                     effectiveSpacing = { ...effectiveSpacing, ...style.spacing };
+                                }
+                                if (style.runProps) {
+                                    effectiveRunProps = { ...effectiveRunProps, ...style.runProps };
                                 }
                             });
 
@@ -1235,6 +1323,18 @@ export class DocxReader {
                                     attrs.lineRule = effectiveSpacing.lineRule;
                                 }
                                 console.log('DEBUG parseParagraph: Resolved effective spacing for style ' + val + ':', effectiveSpacing);
+                            }
+
+                            // Apply resolved run properties to paragraphDefaults (which become default for runs in this paragraph)
+                            // Only if not already set by paragraph-level direct formatting (checked below)
+                            if (effectiveRunProps) {
+                                if (!paragraphDefaults.fontSize && effectiveRunProps.fontSize) {
+                                    paragraphDefaults.fontSize = effectiveRunProps.fontSize;
+                                }
+                                if (!paragraphDefaults.fontFamily && effectiveRunProps.fontFamily) {
+                                    paragraphDefaults.fontFamily = effectiveRunProps.fontFamily;
+                                }
+                                // We could also support color, bold, etc. here if needed for the whole paragraph
                             }
                         }
                     }
@@ -1339,13 +1439,29 @@ export class DocxReader {
             }
 
             // Fallback: If no style was explicitly applied, inherit from docDefaults
-            if (!attrs.styleId && this.docDefaults.pPr && this.docDefaults.pPr.spacing) {
-                const def = this.docDefaults.pPr.spacing;
-                if (!attrs.spacingBefore && def.before) attrs.spacingBefore = def.before;
-                if (!attrs.spacingAfter && def.after) attrs.spacingAfter = def.after;
-                if (!attrs.lineHeight && def.line) attrs.lineHeight = def.line;
-                if (!attrs.lineRule && def.lineRule) attrs.lineRule = def.lineRule;
-                console.log('DEBUG parseParagraph: Applied docDefaults to unstyled paragraph:', def);
+            // Fallback: If no style was explicitly applied, inherit from docDefaults
+            if (!attrs.styleId) {
+                if (this.docDefaults.pPr && this.docDefaults.pPr.spacing) {
+                    const def = this.docDefaults.pPr.spacing;
+                    if (!attrs.spacingBefore && def.before) attrs.spacingBefore = def.before;
+                    if (!attrs.spacingAfter && def.after) attrs.spacingAfter = def.after;
+                    if (!attrs.lineHeight && def.line) attrs.lineHeight = def.line;
+                    if (!attrs.lineRule && def.lineRule) attrs.lineRule = def.lineRule;
+                    console.log('DEBUG parseParagraph: Applied docDefaults to unstyled paragraph:', def);
+                }
+
+                // ALSO apply default default run properties if not directly formatted
+                if (this.docDefaults) {
+                    if (!paragraphDefaults.fontSize && this.docDefaults.sz) {
+                        const val = this.docDefaults.sz['w:val'] || this.docDefaults.sz['val'];
+                        if (val) paragraphDefaults.fontSize = `${parseInt(val) / 2}pt`;
+                    }
+                    if (!paragraphDefaults.fontFamily && this.docDefaults.rFonts) {
+                        const fonts = this.docDefaults.rFonts;
+                        const val = fonts[':@']?.['w:eastAsia'] || fonts[':@']?.['eastAsia'] || fonts[':@']?.['w:ascii'] || fonts[':@']?.['ascii'];
+                        if (val) paragraphDefaults.fontFamily = val;
+                    }
+                }
             }
 
             if (rKey) {
@@ -1462,6 +1578,14 @@ export class DocxReader {
                 extractInlineSdtRuns(sdtContent);
             }
         });
+
+        // Store paragraph defaults as attrs for serialization (after resolving styles)
+        if (paragraphDefaults.fontSize) {
+            attrs.pPrFontSize = paragraphDefaults.fontSize;
+        }
+        if (paragraphDefaults.fontFamily) {
+            attrs.pPrFontFamily = paragraphDefaults.fontFamily;
+        }
 
 
         const validChildren = children.filter(c => c);
