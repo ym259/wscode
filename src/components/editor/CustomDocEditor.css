@@ -8,8 +8,9 @@
     font-family: "Hiragino Mincho ProN", "Hiragino Mincho Pro", "Yu Mincho", "YuMincho", "MS PMincho", "MS Mincho", serif;
     /* Font size from docDefaults (w:sz value), set via CSS variable from PagedEditorContent */
     font-size: var(--doc-default-font-size, 10.5pt);
-    /* Let document specify line-height via inline styles; fallback to Word's default "Multiple 1.15" */
-    line-height: 1.15;
+    /* Line-height from docGrid linePitch, calculated in PagedEditorContent
+       Default 1.5 is more appropriate for Japanese documents than 1.15 */
+    line-height: var(--doc-default-line-height, 1.5);
     /* Match Word's default letter-spacing (calibrated to 0.015em to force Line 1 wrapping) */
     letter-spacing: 0.015em;
     /* Reset any browser defaults */
@@ -17,7 +18,9 @@
 }
 
 .ProseMirror p {
-    margin-bottom: 0;
+    /* Paragraph spacing from docGrid linePitch, simulates Word's grid-based layout
+       where consecutive paragraphs have implicit spacing from grid snapping */
+    margin-bottom: var(--doc-paragraph-spacing, 3pt);
     margin-top: 0;
     /* Inherit font-size from parent (set via docDefaults) */
 }

@@ -101,6 +101,37 @@ export const PagedEditorContent: React.FC<PagedEditorContentProps> = ({
         : 10.5;
     console.log('[PagedEditorContent] defaultFontSizePt:', defaultFontSizePt);
 
+    // Extract line pitch from docGrid for grid-based line spacing
+    // Japanese documents typically use grid-based layout where linePitch defines
+    // the vertical distance between lines (in twips, 1 twip = 1/20 pt)
+    const linePitchTwips = parseInt(
+        docAttrs?.docGrid?.['w:linePitch'] ||
+        docAttrs?.docGrid?.['linePitch'] ||
+        '0'
+    );
+    // Calculate line-height multiplier from linePitch
+    // If linePitch is specified, convert to pt and divide by font size
+    // Otherwise, use a larger default (1.5) for Japanese document compatibility
+    let defaultLineHeight: string;
+    let paragraphSpacingPt: number;
+    if (linePitchTwips > 0) {
+        const linePitchPt = linePitchTwips / 20;
+        // Line-height as multiplier = linePitch / fontSize
+        const lineHeightMultiplier = linePitchPt / defaultFontSizePt;
+        defaultLineHeight = lineHeightMultiplier.toFixed(3);
+        // Paragraph spacing: In grid-based layout, paragraphs start on new grid lines
+        // Add ~25% of line pitch as inter-paragraph spacing to simulate grid snap
+        paragraphSpacingPt = linePitchPt * 0.25;
+        console.log('[PagedEditorContent] Using docGrid linePitch:', linePitchTwips, 'twips =', linePitchPt, 'pt -> line-height:', defaultLineHeight, ', paragraph-spacing:', paragraphSpacingPt, 'pt');
+    } else {
+        // Fallback: use 1.5 for better Japanese document compatibility
+        // (more generous than 1.15, which is too tight for Japanese fonts)
+        defaultLineHeight = '1.5';
+        // Default paragraph spacing of ~3pt for Japanese documents
+        paragraphSpacingPt = 3;
+        console.log('[PagedEditorContent] No docGrid linePitch, using default line-height:', defaultLineHeight);
+    }
+
     const contentAreaHeight = pageHeight - marginTop - marginBottom;
     const pageGap = 32;
 
@@ -367,8 +398,10 @@ export const PagedEditorContent: React.FC<PagedEditorContentProps> = ({
                             clipPath: isPaged && pages[0]?.visibleHeight && pages[0].visibleHeight < contentAreaHeight
                                 ? `inset(0 0 ${contentAreaHeight - pages[0].visibleHeight}px 0)`
                                 : undefined,
-                            // Set document default font size as CSS custom property for .ProseMirror to use
+                            // Set document default font size, line-height, and paragraph spacing as CSS custom properties
                             '--doc-default-font-size': `${defaultFontSizePt}pt`,
+                            '--doc-default-line-height': defaultLineHeight,
+                            '--doc-paragraph-spacing': `${paragraphSpacingPt}pt`,
                         } as React.CSSProperties}
                     >
                         <EditorContent editor={editor} />
@@ -417,7 +450,9 @@ export const PagedEditorContent: React.FC<PagedEditorContentProps> = ({
                                     clipPath: pageInfo.visibleHeight < contentAreaHeight
                                         ? `inset(0 0 ${contentAreaHeight - pageInfo.visibleHeight}px 0)`
                                         : undefined,
-                                }}
+                                    // Pass CSS variables for consistent styling with page 1
+                                    '--doc-paragraph-spacing': `${paragraphSpacingPt}pt`,
+                                } as React.CSSProperties}
                             >
                                 {/* Cloned content with negative margin to show correct portion */}
                                 <div
@@ -426,6 +461,7 @@ export const PagedEditorContent: React.FC<PagedEditorContentProps> = ({
                                         marginTop: `-${pageInfo.contentOffset}px`,
                                         pointerEvents: 'none',
                                         fontSize: `${defaultFontSizePt}pt`,
+                                        lineHeight: defaultLineHeight,
                                     }}
                                     dangerouslySetInnerHTML={{ __html: clonedContent }}
                                 />
