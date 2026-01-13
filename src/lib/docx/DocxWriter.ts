@@ -54,7 +54,8 @@ interface DocAttrs {
  * Comment data extracted from content
  */
 interface CommentData {
-    id: string;
+    sourceId: string;
+    docxId: string; // MUST be numeric string for Word compatibility
     author: string;
     date: string;
     content: string;
@@ -69,6 +70,8 @@ interface CommentData {
 export class DocxWriter {
     private originalZip: JSZip | null = null;
     private comments: CommentData[] = [];
+    private commentIdMap = new Map<string, string>();
+    private nextCommentId = 0;
     private insertionIdCounter = 0;
     private deletionIdCounter = 0;
     private listNumIdBullet = 1;
@@ -88,6 +91,8 @@ export class DocxWriter {
     async export(content: JSONContent): Promise<Blob> {
         // Reset state
         this.comments = [];
+        this.commentIdMap.clear();
+        this.nextCommentId = 0;
         this.insertionIdCounter = 0;
         this.deletionIdCounter = 0;
         this.nextNumId = 10;
@@ -435,12 +440,72 @@ ${sectPr}
      * Serialize paragraph content (text runs with marks)
      */
     private serializeParagraphContent(content: JSONContent[]): string {
-        return content.map(child => {
-            if (child.type === 'text') {
-                return this.serializeTextRun(child);
+        let result = '';
+
+        // Track active comment across inline nodes so we emit one contiguous range per comment.
+        let activeCommentSourceId: string | null = null;
+        let activeCommentDocxId: string | null = null;
+
+        const closeActiveComment = () => {
+            if (!activeCommentDocxId) return;
+            result += `<w:commentRangeEnd w:id="${activeCommentDocxId}"/>`;
+            result += `<w:r><w:commentReference w:id="${activeCommentDocxId}"/></w:r>`;
+            activeCommentSourceId = null;
+            activeCommentDocxId = null;
+        };
+
+        const getCommentInfoFromInlineNode = (node: JSONContent): { sourceId: string; author: string; date: string; content: string } | null => {
+            const marks = node.marks || [];
+            const commentMark = marks.find(m => m.type === 'comment');
+            if (!commentMark) return null;
+            const attrs = (commentMark.attrs || {}) as Record<string, unknown>;
+            const sourceId = String(attrs.commentId || `__comment_${this.comments.length}`);
+            const author = String(attrs.author || 'Unknown');
+            const date = String(attrs.date || new Date().toISOString());
+            const content = String(attrs.content || '');
+            return { sourceId, author, date, content };
+        };
+
+        for (const child of content) {
+            // Comments in our editor model are marks on inline text nodes.
+            const commentInfo = getCommentInfoFromInlineNode(child);
+            const nextSourceId = commentInfo?.sourceId ?? null;
+
+            // If comment boundary changes, close/open ranges as needed
+            if (nextSourceId !== activeCommentSourceId) {
+                closeActiveComment();
+                if (commentInfo) {
+                    const docxId = this.getDocxCommentId(commentInfo.sourceId);
+
+                    // Ensure comment is present in comments.xml
+                    if (!this.comments.find(c => c.sourceId === commentInfo.sourceId)) {
+                        this.comments.push({
+                            sourceId: commentInfo.sourceId,
+                            docxId,
+                            author: commentInfo.author,
+                            date: commentInfo.date,
+                            content: commentInfo.content
+                        });
+                    }
+
+                    result += `<w:commentRangeStart w:id="${docxId}"/>`;
+                    activeCommentSourceId = commentInfo.sourceId;
+                    activeCommentDocxId = docxId;
+                }
             }
-            return this.serializeNode(child);
-        }).join('');
+
+            // Serialize the child node itself (without emitting comment range wrappers)
+            if (child.type === 'text') {
+                result += this.serializeTextRun(child);
+            } else {
+                result += this.serializeNode(child);
+            }
+        }
+
+        // Close any remaining open comment range at end of paragraph
+        closeActiveComment();
+
+        return result;
     }
 
     /**
@@ -514,7 +579,8 @@ ${sectPr}
         // Check for track change marks
         const insertionMark = marks.find(m => m.type === 'insertion');
         const deletionMark = marks.find(m => m.type === 'deletion');
-        const commentMark = marks.find(m => m.type === 'comment');
+        // Note: comment ranges are handled at paragraph-content level (serializeParagraphContent)
+        // to avoid emitting invalid multiple range markers for the same comment.
 
         // Build run properties
         let rPr = '';
@@ -578,23 +644,6 @@ ${sectPr}
             const author = attrs?.author || 'Unknown';
             const date = attrs?.date || new Date().toISOString();
             runXml = `<w:del w:id="${id}" w:author="${this.escapeXml(author)}" w:date="${date}">${runXml}</w:del>`;
-        }
-
-        // Handle comments
-        if (commentMark) {
-            const attrs = commentMark.attrs as DocAttrs | undefined;
-            const commentId = attrs?.commentId || String(this.comments.length);
-            const author = attrs?.author || 'Unknown';
-            const date = attrs?.date || new Date().toISOString();
-            const content = attrs?.content || '';
-
-            // Add to comments collection
-            if (!this.comments.find(c => c.id === commentId)) {
-                this.comments.push({ id: commentId, author, date, content });
-            }
-
-            // Wrap with comment range markers
-            runXml = `<w:commentRangeStart w:id="${commentId}"/>${runXml}<w:commentRangeEnd w:id="${commentId}"/><w:r><w:commentReference w:id="${commentId}"/></w:r>`;
         }
 
         return runXml;
@@ -696,7 +745,7 @@ ${sectPr}
      */
     private serializeComments(): string {
         const commentsXml = this.comments.map(comment => {
-            return `<w:comment w:id="${comment.id}" w:author="${this.escapeXml(comment.author)}" w:date="${comment.date}">
+            return `<w:comment w:id="${comment.docxId}" w:author="${this.escapeXml(comment.author)}" w:date="${this.escapeXml(comment.date)}">
 <w:p><w:r><w:t>${this.escapeXml(comment.content)}</w:t></w:r></w:p>
 </w:comment>`;
         }).join('\n');
@@ -705,6 +754,21 @@ ${sectPr}
 <w:comments xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
 ${commentsXml}
 </w:comments>`;
+    }
+
+    /**
+     * Map internal comment IDs to numeric DOCX ids (Word requires w:id to be an integer).
+     * If the source id is already numeric, it is used directly.
+     */
+    private getDocxCommentId(sourceId: string): string {
+        const s = String(sourceId ?? '');
+
+        const existing = this.commentIdMap.get(s);
+        if (existing) return existing;
+
+        const next = String(this.nextCommentId++);
+        this.commentIdMap.set(s, next);
+        return next;
     }
 
     /**
@@ -907,8 +971,15 @@ ${relationships}
         const parser = new XMLParser({
             ignoreAttributes: false,
             attributeNamePrefix: '',
+            ignoreDeclaration: true,
         });
         const contentTypes = parser.parse(contentTypesXml);
+
+        // Defensive: ensure we never re-emit an XML declaration from the parsed object
+        // (fast-xml-parser can preserve it depending on options / input).
+        // If we prepend our own declaration, leaving this in would create a duplicate declaration.
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        delete (contentTypes as any)['?xml'];
 
         // Ensure <Types> exists and has Overrides
         if (!contentTypes.Types) return;
@@ -962,8 +1033,13 @@ ${relationships}
         const parser = new XMLParser({
             ignoreAttributes: false,
             attributeNamePrefix: '',
+            ignoreDeclaration: true,
         });
         const rels = parser.parse(relsXml);
+
+        // Defensive: ensure we never re-emit an XML declaration from the parsed object.
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        delete (rels as any)['?xml'];
 
         if (!rels.Relationships) return;
 

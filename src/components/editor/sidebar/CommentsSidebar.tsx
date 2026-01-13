@@ -3,6 +3,46 @@
 import React, { useState, useRef, useCallback } from 'react';
 import { Editor } from '@tiptap/react';
 
+function getScrollableAncestor(start: HTMLElement | null): HTMLElement | null {
+    let node: HTMLElement | null = start;
+    while (node) {
+        const style = window.getComputedStyle(node);
+        const overflowY = style.overflowY;
+        const canScrollY = (overflowY === 'auto' || overflowY === 'scroll') && node.scrollHeight > node.clientHeight + 1;
+        if (canScrollY) return node;
+        node = node.parentElement;
+    }
+    return document.scrollingElement instanceof HTMLElement ? document.scrollingElement : null;
+}
+
+function rectIntersectionHeight(a: DOMRect, b: DOMRect): number {
+    const top = Math.max(a.top, b.top);
+    const bottom = Math.min(a.bottom, b.bottom);
+    return Math.max(0, bottom - top);
+}
+
+function pickBestCommentAnchor(candidates: HTMLElement[], viewportRect: DOMRect): HTMLElement | null {
+    let best: { el: HTMLElement; score: number } | null = null;
+
+    for (const el of candidates) {
+        const rect = el.getBoundingClientRect();
+        if (rect.height <= 0 || rect.width <= 0) continue;
+
+        const intersection = rectIntersectionHeight(rect, viewportRect);
+        const distanceToTop = Math.abs(rect.top - viewportRect.top);
+
+        // Prefer anchors currently visible in the scroll viewport; otherwise pick the closest to viewport top.
+        // Higher is better: visibility dominates; distance is a small tie-breaker.
+        const score = (intersection > 0 ? 1_000_000 + intersection : 0) - distanceToTop;
+
+        if (!best || score > best.score) {
+            best = { el, score };
+        }
+    }
+
+    return best?.el ?? null;
+}
+
 interface Comment {
     id: string;
     author: string;
@@ -31,18 +71,16 @@ export const CommentsSidebar: React.FC<CommentsSidebarProps> = ({ comments, edit
     const [commentPositions, setCommentPositions] = useState<CommentPosition[]>([]);
     const sidebarRef = useRef<HTMLDivElement>(null);
     const containerRef = useRef<HTMLDivElement>(null);
+    const rafIdRef = useRef<number | null>(null);
 
     // Calculate positions of comments based on their highlighted text in the editor
     const calculatePositions = useCallback(() => {
         if (!editor || !sidebarRef.current) return;
 
-        const editorElement = editor.view.dom;
-
-
-        // Get the scrollable container (the editor's scroll container)
-        const editorScrollContainer = editorElement.closest('[style*="overflow"]') || editorElement.parentElement;
+        // Use the real scrolling element (paged mode has multiple overflow:hidden wrappers).
+        const editorElement = editor.view.dom as HTMLElement;
+        const editorScrollContainer = getScrollableAncestor(editorElement);
         if (!editorScrollContainer) return;
-
 
         const containerRect = editorScrollContainer.getBoundingClientRect();
 
@@ -50,10 +88,12 @@ export const CommentsSidebar: React.FC<CommentsSidebarProps> = ({ comments, edit
         const MIN_GAP = 100; // Minimum gap between stacked comments (card height + margin)
 
         comments.forEach((comment) => {
-            // Find the highlighted element for this comment
-            const highlightElement = editorElement.querySelector(
-                `[data-comment-id="${comment.id}"]`
-            ) as HTMLElement | null;
+            // In paged mode, comments exist both in the real EditorContent and in cloned pages.
+            // Pick the anchor that is actually visible in the scroll viewport so cards sync as you scroll.
+            const candidates = Array.from(
+                document.querySelectorAll(`[data-comment-id="${comment.id}"]`)
+            ) as HTMLElement[];
+            const highlightElement = pickBestCommentAnchor(candidates, containerRect);
 
             if (highlightElement) {
                 const highlightRect = highlightElement.getBoundingClientRect();
@@ -83,21 +123,29 @@ export const CommentsSidebar: React.FC<CommentsSidebarProps> = ({ comments, edit
     // Recalculate positions when comments change, editor updates, or window resizes
     // Use useLayoutEffect to prevent visual jitter
     React.useLayoutEffect(() => {
-        calculatePositions();
+        const schedule = () => {
+            if (rafIdRef.current != null) return;
+            rafIdRef.current = window.requestAnimationFrame(() => {
+                rafIdRef.current = null;
+                calculatePositions();
+            });
+        };
 
-        // Recalculate on scroll
-        const editorElement = editor?.view.dom;
-        const scrollContainer = editorElement?.closest('[style*="overflow"]') || editorElement?.parentElement;
+        schedule();
 
-        const handleScroll = () => calculatePositions();
-        const handleResize = () => calculatePositions();
+        // Recalculate on scroll (using real scroll container, not overflow:hidden wrappers)
+        const editorElement = editor?.view.dom as HTMLElement | undefined;
+        const scrollContainer = editorElement ? getScrollableAncestor(editorElement) : null;
 
-        scrollContainer?.addEventListener('scroll', handleScroll);
+        const handleScroll = () => schedule();
+        const handleResize = () => schedule();
+
+        scrollContainer?.addEventListener('scroll', handleScroll, { passive: true });
         window.addEventListener('resize', handleResize);
 
         // Also recalculate when editor content changes
         const observer = new MutationObserver(() => {
-            requestAnimationFrame(calculatePositions);
+            schedule();
         });
 
         if (editorElement) {
@@ -112,6 +160,10 @@ export const CommentsSidebar: React.FC<CommentsSidebarProps> = ({ comments, edit
             scrollContainer?.removeEventListener('scroll', handleScroll);
             window.removeEventListener('resize', handleResize);
             observer.disconnect();
+            if (rafIdRef.current != null) {
+                window.cancelAnimationFrame(rafIdRef.current);
+                rafIdRef.current = null;
+            }
         };
     }, [calculatePositions, editor]);
 

@@ -183,6 +183,27 @@ export const getCommentsTools = (context: ToolContext): ToolDefinition[] => {
                 const editor = getEditor();
                 if (!editor) throw new Error('Editor not initialized');
 
+                // Normalize comment text (agents sometimes wrap the whole string in quotes)
+                const normalizedComment = (() => {
+                    const trimmed = String(comment ?? '').trim();
+                    if (
+                        (trimmed.startsWith('"') && trimmed.endsWith('"')) ||
+                        (trimmed.startsWith('“') && trimmed.endsWith('”')) ||
+                        (trimmed.startsWith('「') && trimmed.endsWith('」'))
+                    ) {
+                        return trimmed.slice(1, -1).trim();
+                    }
+                    return trimmed;
+                })();
+
+                // Generate a numeric comment id to ensure DOCX export uses valid w:id values.
+                // Word expects comment w:id to be an integer; non-numeric IDs can corrupt exported DOCX.
+                const generateNumericCommentId = () => {
+                    const now = Date.now();
+                    const rand = Math.floor(Math.random() * 1000);
+                    return `${now}${rand.toString().padStart(3, '0')}`;
+                };
+
                 // 1. Find the target text position
                 const textPosition = findTextPositionExcludingDeletions(editor.state.doc, find, { contextBefore, contextAfter });
 
@@ -197,22 +218,45 @@ export const getCommentsTools = (context: ToolContext): ToolDefinition[] => {
                 const { from, to } = textPosition;
 
                 try {
-                    // 2. Select the text
-                    editor.chain().setTextSelection({ from, to }).run();
+                    const author = 'AI Assistant';
+                    const date = new Date().toISOString();
 
-                    // 3. Insert Comment
-                    // Try standard TipTap comment commands first
-                    if (editor.commands.setComment) {
-                        editor.commands.setComment(comment);
-                        return `Inserted comment "${comment}" on "${find}" (using setComment).`;
-                    } else if (editor.commands.addComment) {
-                        editor.commands.addComment(comment);
-                        return `Inserted comment "${comment}" on "${find}" (using addComment).`;
-                    } else {
-                        // Fallback to AI Action if specific command not found
-                        console.warn('[insertComment] Standard comment commands not found. Falling back to AIActions.literalInsertComment.');
-                        return await getActionMethods().literalInsertComment(find, comment);
+                    // 2. Select the text + focus
+                    editor.chain().focus().setTextSelection({ from, to }).run();
+
+                    // 3. Insert comment in a way that is compatible with CustomDocEditor sidebar
+                    // Prefer setting the mark with explicit attrs so we can also sync comment state.
+                    const hasCommentMark = !!editor.state?.schema?.marks?.comment;
+                    if (hasCommentMark) {
+                        const commentId = generateNumericCommentId();
+                        editor.chain()
+                            .focus()
+                            .setTextSelection({ from, to })
+                            .setMark('comment', { commentId, author, date, content: normalizedComment })
+                            .run();
+
+                        // Sync to sidebar state (CustomDocEditor uses React state for sidebar rendering)
+                        const helpers: any = (editor as any).helpers;
+                        if (helpers?.comments?.addComment) {
+                            helpers.comments.addComment({ id: commentId, author, date, content: normalizedComment });
+                        }
+
+                        return `Inserted comment on "${find}".`;
                     }
+
+                    // Fallbacks for environments where the comment mark isn't available
+                    if (editor.commands.setComment) {
+                        editor.commands.setComment(normalizedComment);
+                        return `Inserted comment on "${find}" (using setComment).`;
+                    }
+                    if ((editor.commands as any).addComment) {
+                        (editor.commands as any).addComment(normalizedComment);
+                        return `Inserted comment on "${find}" (using addComment).`;
+                    }
+
+                    // Final fallback to AI Action if specific command not found
+                    console.warn('[insertComment] Comment mark/commands not found. Falling back to AIActions.literalInsertComment.');
+                    return await getActionMethods().literalInsertComment(find, normalizedComment);
                 } catch (error) {
                     console.error('[insertComment] Error:', error);
                     throw new Error(`Failed to insert comment: ${error instanceof Error ? error.message : 'Unknown error'}`);
