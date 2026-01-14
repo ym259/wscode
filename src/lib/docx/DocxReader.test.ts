@@ -277,28 +277,61 @@ describe('DocxReader', () => {
         const buffer = await createMockDocx(content);
         const result = await reader.load(buffer);
 
-        // Should have one orderedList at root
-        expect(result.content).toHaveLength(1);
-        expect(result.content[0].type).toBe('orderedList');
+        // Current model: list items are kept as paragraphs with list metadata (no ol/ul wrapping)
+        expect(result.content).toHaveLength(4);
+        for (const node of result.content) {
+            expect(node.type).toBe('paragraph');
+            expect(node.attrs.listNumId).toBe('1');
+        }
 
-        const rootList = result.content[0];
-        // Should have 2 top-level list items
-        expect(rootList.content).toHaveLength(2);
+        // Verify nesting levels are preserved
+        expect(result.content.map((n: any) => n.attrs.listIlvl)).toEqual([0, 1, 1, 0]);
+        expect(result.content[0].content[0].text).toBe('First level item 1');
+        expect(result.content[1].content[0].text).toBe('Second level item 1');
+        expect(result.content[2].content[0].text).toBe('Second level item 2');
+        expect(result.content[3].content[0].text).toBe('First level item 2');
+    });
 
-        // First list item should have its paragraph and a nested list
-        const firstItem = rootList.content[0];
-        expect(firstItem.type).toBe('listItem');
-        expect(firstItem.content.length).toBeGreaterThanOrEqual(1);
+    it('should parse tab stops (w:tabs) and tab characters (w:tab)', async () => {
+        const styles = `
+            <w:style w:type="paragraph" w:styleId="MyTabStyle">
+                <w:name w:val="MyTabStyle"/>
+                <w:pPr>
+                    <w:tabs>
+                        <w:tab w:val="left" w:pos="1440" w:leader="dot"/>
+                        <w:tab w:val="right" w:pos="2880"/>
+                    </w:tabs>
+                </w:pPr>
+            </w:style>
+        `;
 
-        // Check for nested list in first item
-        const nestedList = firstItem.content.find((c: any) => c.type === 'orderedList');
-        expect(nestedList).toBeDefined();
-        expect(nestedList.content).toHaveLength(2); // Two nested items
+        const content = `
+            <w:p>
+                <w:pPr>
+                    <w:pStyle w:val="MyTabStyle"/>
+                </w:pPr>
+                <w:r><w:t>甲</w:t></w:r>
+                <w:r><w:tab/></w:r>
+                <w:r><w:t>乙</w:t></w:r>
+            </w:p>
+        `;
 
-        // Second top-level item
-        const secondItem = rootList.content[1];
-        expect(secondItem.type).toBe('listItem');
-        expect(secondItem.content[0].type).toBe('paragraph');
+        const buffer = await createMockDocx(content, styles);
+        const doc = await reader.load(buffer);
+
+        const p: any = doc.content?.[0];
+        expect(p?.type).toBe('paragraph');
+
+        // Tab stops resolved from style
+        expect(Array.isArray(p?.attrs?.tabStops)).toBe(true);
+        expect(p?.attrs?.tabStops?.[0]).toMatchObject({ posTwips: '1440', type: 'left', leader: 'dot' });
+        expect(p?.attrs?.tabStops?.[1]).toMatchObject({ posTwips: '2880', type: 'right' });
+
+        // Inline tab node exists between text nodes
+        const inlineTypes = (p?.content || []).map((n: any) => n.type);
+        expect(inlineTypes).toEqual(['text', 'tab', 'text']);
+        expect(p?.content?.[0]?.text).toBe('甲');
+        expect(p?.content?.[2]?.text).toBe('乙');
     });
 
     it('should parse comments and apply comment marks to text', async () => {

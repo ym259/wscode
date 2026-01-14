@@ -103,12 +103,13 @@ describe('DocxReader Indentation and Numbering Reproduction', () => {
         const buffer = await createMockDocxWithNumbering(content, numbering);
         const result = await reader.load(buffer);
 
-        const list = result.content[0];
-        expect(list.type).toBe('orderedList');
+        // Current model: list items are paragraphs with list metadata (no ol/ul wrapping)
+        const paragraph = result.content[0];
+        expect(paragraph.type).toBe('paragraph');
         // Check attributes extracted
-        expect(list.attrs.numFmt).toBe('decimalFullWidth');
-        expect(list.attrs.lvlText).toBe('第%1条');
-        expect(list.attrs.originalNumId).toBe('1');
+        expect(paragraph.attrs.listNumFmt).toBe('decimalFullWidth');
+        expect(paragraph.attrs.listLvlText).toBe('第%1条');
+        expect(paragraph.attrs.listNumId).toBe('1');
     });
 
     it('should respect paragraph indent override "0" over numbering indent', async () => {
@@ -146,18 +147,11 @@ describe('DocxReader Indentation and Numbering Reproduction', () => {
         const buffer = await createMockDocxWithNumbering(content, numbering);
         const result = await reader.load(buffer);
 
-        const orderedList = result.content[0];
-        // The list should have numIndent from the paragraph override
-        expect(orderedList.attrs.numIndent).toBeDefined();
-        // Should be '0' (from paragraph) not '720' (from numbering)
-        expect(orderedList.attrs.numIndent.left).toBe('0');
-        expect(orderedList.attrs.numIndent.hanging).toBe('0');
-
-        // The paragraph inside the list item should NOT have the override indent (moved to list)
-        const listItem = orderedList.content[0];
-        const paragraph = listItem.content[0];
-        expect(paragraph.attrs.indent).toBeUndefined();
-        expect(paragraph.attrs.hanging).toBeUndefined();
+        const paragraph = result.content[0];
+        expect(paragraph.type).toBe('paragraph');
+        // The list paragraph should use indentation from the paragraph override (0), not numbering (720)
+        expect(paragraph.attrs.listIndentLeft).toBe('0');
+        expect(paragraph.attrs.listIndentHanging).toBe('0');
     });
 
     it('should extract correct attributes when no indent is present in paragraph but present in numbering', async () => {
@@ -190,9 +184,10 @@ describe('DocxReader Indentation and Numbering Reproduction', () => {
 
         const buffer = await createMockDocxWithNumbering(content, numbering);
         const result = await reader.load(buffer);
-        const orderedList = result.content[0];
-        expect(orderedList.attrs.numIndent.left).toBe('720');
-        const paragraph = orderedList.content[0].content[0];
+        const paragraph = result.content[0];
+        expect(paragraph.type).toBe('paragraph');
+        expect(paragraph.attrs.listIndentLeft).toBe('720');
+        // Paragraph shouldn't carry its own indent in this case (indent comes from numbering)
         expect(paragraph.attrs.indent).toBeUndefined();
     });
 
@@ -228,11 +223,12 @@ describe('DocxReader Indentation and Numbering Reproduction', () => {
 
         const buffer = await createMockDocxWithNumbering(content, numbering);
         const result = await reader.load(buffer);
-        const orderedList = result.content[0];
+        const paragraph = result.content[0];
 
         // Should use numbering indent
-        expect(orderedList.attrs.numIndent).toBeDefined();
-        expect(orderedList.attrs.numIndent.left).toBe('720');
+        expect(paragraph.type).toBe('paragraph');
+        expect(paragraph.attrs.listIndentLeft).toBe('720');
+        expect(paragraph.attrs.listIndentHanging).toBe('720');
     });
 
     it('should respect style indent override over numbering indent', async () => {
@@ -279,17 +275,41 @@ describe('DocxReader Indentation and Numbering Reproduction', () => {
         const buffer = await createMockDocxWithNumbering(content, numbering, styles);
         const result = await reader.load(buffer);
 
-        const orderedList = result.content[0];
-        // The list should have numIndent from the style override
-        expect(orderedList.attrs.numIndent).toBeDefined();
-        // Should be '0' (from style) not '1440' (from numbering)
-        expect(orderedList.attrs.numIndent.left).toBe('0');
-        expect(orderedList.attrs.numIndent.hanging).toBe('0');
+        const paragraph = result.content[0];
+        expect(paragraph.type).toBe('paragraph');
+        // The list paragraph should have indentation from the style override
+        expect(paragraph.attrs.listIndentLeft).toBe('0');
+        expect(paragraph.attrs.listIndentHanging).toBe('0');
+    });
 
-        // The paragraph inside the list item should NOT have the override indent (moved to list)
-        const listItem = orderedList.content[0];
-        const paragraph = listItem.content[0];
+    it('should apply style-based first-line indentation for normal paragraphs', async () => {
+        const numbering = ``; // Not needed for this test
+
+        const styles = `
+            <w:style w:type="paragraph" w:styleId="IndentedBody">
+                <w:name w:val="Indented Body"/>
+                <w:pPr>
+                    <w:ind w:firstLine="720"/>
+                </w:pPr>
+            </w:style>
+        `;
+
+        const content = `
+            <w:p>
+                <w:pPr>
+                    <w:pStyle w:val="IndentedBody"/>
+                </w:pPr>
+                <w:r><w:t>First line should be indented</w:t></w:r>
+            </w:p>
+        `;
+
+        const buffer = await createMockDocxWithNumbering(content, numbering, styles);
+        const result = await reader.load(buffer);
+
+        const paragraph = result.content[0];
+        expect(paragraph.type).toBe('paragraph');
+        expect(paragraph.attrs.firstLine).toBe('720');
+        // Ensure we didn't accidentally set left indent when only firstLine is specified
         expect(paragraph.attrs.indent).toBeUndefined();
-        expect(paragraph.attrs.hanging).toBeUndefined();
     });
 });

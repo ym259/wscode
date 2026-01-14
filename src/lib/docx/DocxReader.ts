@@ -16,7 +16,14 @@ export class DocxReader {
             numFmt: string;
             lvlText: string;
             start: number;
-            indent?: { left?: string; hanging?: string; firstLine?: string };
+            indent?: {
+                left?: string;
+                hanging?: string;
+                firstLine?: string;
+                leftChars?: string;
+                hangingChars?: string;
+                firstLineChars?: string;
+            };
             font?: string;
         }>;
     }> = {};
@@ -26,6 +33,9 @@ export class DocxReader {
             ignoreAttributes: false,
             attributeNamePrefix: '',
             removeNSPrefix: false, // Keep prefixes to be explicit
+            // DOCX frequently uses xml:space="preserve" and leading full-width spaces (U+3000).
+            // If we trim values, we lose indentation that Word encodes as literal spaces.
+            trimValues: false,
         });
     }
 
@@ -100,6 +110,20 @@ export class DocxReader {
                         };
                     }
 
+                    // Extract default indentation (DOCX: twips / chars)
+                    const ind = pPr['w:ind'] || pPr['ind'];
+                    if (ind) {
+                        if (!this.docDefaults.pPr) this.docDefaults.pPr = {};
+                        this.docDefaults.pPr.indent = {
+                            left: ind['w:left'] || ind['w:start'] || ind['left'] || ind['start'],
+                            hanging: ind['w:hanging'] || ind['hanging'],
+                            firstLine: ind['w:firstLine'] || ind['firstLine'],
+                            leftChars: ind['w:leftChars'] || ind['leftChars'],
+                            hangingChars: ind['w:hangingChars'] || ind['hangingChars'],
+                            firstLineChars: ind['w:firstLineChars'] || ind['firstLineChars'],
+                        };
+                    }
+
                     // Extract default spacing
                     const sp = pPr['w:spacing'] || pPr['spacing'];
                     if (sp) {
@@ -131,6 +155,7 @@ export class DocxReader {
                 const pPr = style['w:pPr'] || style['pPr'];
                 let indent: any = null;
                 let spacing: any = null;
+                let tabStops: any[] | null = null;
 
                 if (pPr) {
                     // Extract indent
@@ -139,7 +164,10 @@ export class DocxReader {
                         indent = {
                             left: ind['w:left'] || ind['w:start'] || ind['left'] || ind['start'],
                             hanging: ind['w:hanging'] || ind['hanging'],
-                            firstLine: ind['w:firstLine'] || ind['firstLine']
+                            firstLine: ind['w:firstLine'] || ind['firstLine'],
+                            leftChars: ind['w:leftChars'] || ind['leftChars'],
+                            hangingChars: ind['w:hangingChars'] || ind['hangingChars'],
+                            firstLineChars: ind['w:firstLineChars'] || ind['firstLineChars'],
                         };
                     }
 
@@ -153,6 +181,23 @@ export class DocxReader {
                             lineRule: sp['w:lineRule'] || sp['lineRule']
                         };
                     }
+
+                    // Extract tab stops (<w:tabs><w:tab .../></w:tabs>)
+                    const tabs = pPr['w:tabs'] || pPr['tabs'];
+                    if (tabs) {
+                        const rawTabs = tabs['w:tab'] || tabs['tab'];
+                        const tabArray = Array.isArray(rawTabs) ? rawTabs : (rawTabs ? [rawTabs] : []);
+                        tabStops = tabArray
+                            .map((t: any) => {
+                                const a = t[':@'] || t;
+                                const posTwips = a?.['w:pos'] || a?.['pos'];
+                                const type = a?.['w:val'] || a?.['val'];
+                                const leader = a?.['w:leader'] || a?.['leader'];
+                                if (!posTwips || !type) return null;
+                                return { posTwips: String(posTwips), type: String(type), leader: leader ? String(leader) : undefined };
+                            })
+                            .filter(Boolean) as any[];
+                    }
                 }
 
                 this.stylesMap[styleId] = {
@@ -161,6 +206,7 @@ export class DocxReader {
                     type: type,
                     indent,
                     spacing,
+                    tabStops,
                     runProps: this.parseRunProperties(style)
                 };
 
@@ -261,6 +307,7 @@ export class DocxReader {
             attributeNamePrefix: '',
             removeNSPrefix: false,
             preserveOrder: true,
+            trimValues: false,
         });
 
         const orderlyResult = orderlyParser.parse(xmlContent);
@@ -332,6 +379,7 @@ export class DocxReader {
             attributeNamePrefix: '',
             removeNSPrefix: false,
             preserveOrder: true,
+            trimValues: false,
         });
 
         const orderlyResult = orderlyParser.parse(xmlContent);
@@ -347,7 +395,14 @@ export class DocxReader {
             numFmt: string;
             lvlText: string;
             start: number;
-            indent?: { left?: string; hanging?: string; firstLine?: string };
+            indent?: {
+                left?: string;
+                hanging?: string;
+                firstLine?: string;
+                leftChars?: string;
+                hangingChars?: string;
+                firstLineChars?: string;
+            };
         }>> = {};
 
         numberingArray.forEach((item: any) => {
@@ -398,7 +453,10 @@ export class DocxReader {
                                         levelDef.indent = {
                                             left: indAttrs['w:left'] || indAttrs['left'],
                                             hanging: indAttrs['w:hanging'] || indAttrs['hanging'],
-                                            firstLine: indAttrs['w:firstLine'] || indAttrs['firstLine']
+                                            firstLine: indAttrs['w:firstLine'] || indAttrs['firstLine'],
+                                            leftChars: indAttrs['w:leftChars'] || indAttrs['leftChars'],
+                                            hangingChars: indAttrs['w:hangingChars'] || indAttrs['hangingChars'],
+                                            firstLineChars: indAttrs['w:firstLineChars'] || indAttrs['firstLineChars'],
                                         };
                                     }
                                 });
@@ -465,6 +523,7 @@ export class DocxReader {
             attributeNamePrefix: '',
             removeNSPrefix: false, // Keep prefixes to be explicit
             preserveOrder: true,
+            trimValues: false,
         });
 
         const orderlyResult = orderlyParser.parse(xmlContent);
@@ -844,6 +903,31 @@ export class DocxReader {
                 // Generate the full marker text for special formats
                 const markerText = this.generateMarkerText(numFmt || 'decimal', lvlText, counterValue, ilvl, font);
 
+                // Prefer paragraph/style-defined indentation over numbering indentation, when present.
+                // Word often stores list indentation overrides on the paragraph's w:ind (or its style),
+                // and numbering.xml may only contain a generic default.
+                let effectiveListIndent = numIndent;
+                if (item.attrs?.indent !== undefined || item.attrs?.hanging !== undefined || item.attrs?.firstLine !== undefined) {
+                    effectiveListIndent = {
+                        left: item.attrs.indent,
+                        hanging: item.attrs.hanging,
+                        firstLine: item.attrs.firstLine,
+                    };
+
+                    // Avoid double indentation: once we move indent into list metadata, strip it from the paragraph attrs.
+                    delete item.attrs.indent;
+                    delete item.attrs.indentChars;
+                    delete item.attrs.hanging;
+                    delete item.attrs.hangingChars;
+                    delete item.attrs.firstLine;
+                    delete item.attrs.firstLineChars;
+                } else if (item.attrs?.styleId) {
+                    const styleDef = this.stylesMap[item.attrs.styleId];
+                    if (styleDef?.indent) {
+                        effectiveListIndent = styleDef.indent;
+                    }
+                }
+
                 // Create paragraph with numbering metadata (no listItem wrapper)
                 const paragraph = {
                     type: 'paragraph',
@@ -858,8 +942,8 @@ export class DocxReader {
                         listCounterValue: counterValue,
                         listMarkerText: markerText, // Pre-rendered marker for CSS content
                         // Indentation from numbering definition
-                        listIndentLeft: numIndent?.left,
-                        listIndentHanging: numIndent?.hanging,
+                        listIndentLeft: effectiveListIndent?.left,
+                        listIndentHanging: effectiveListIndent?.hanging,
                     },
                     content: item.content
                 };
@@ -1271,7 +1355,11 @@ export class DocxReader {
                             }
 
                             // Resolve effective spacing from style chain and defaults
-                            let effectiveSpacing = { ...(this.docDefaults.pPr?.spacing || {}) };
+                            let effectiveSpacing = { ...(this.docDefaults?.pPr?.spacing || {}) };
+                            // Resolve effective indentation from style chain and defaults (DOCX twips)
+                            let effectiveIndent = { ...(this.docDefaults?.pPr?.indent || {}) };
+                            // Resolve effective tab stops from style chain (base -> derived)
+                            let effectiveTabStops: any[] | null = null;
 
                             // Initialize with docDefaults for run props
                             let effectiveRunProps: any = {};
@@ -1303,6 +1391,16 @@ export class DocxReader {
                                 if (style.spacing) {
                                     effectiveSpacing = { ...effectiveSpacing, ...style.spacing };
                                 }
+                                if (style.indent) {
+                                    effectiveIndent = { ...effectiveIndent, ...style.indent };
+                                }
+                                if (style.tabStops && Array.isArray(style.tabStops) && style.tabStops.length) {
+                                    // Merge by position; derived style overrides base at same pos
+                                    const byPos = new Map<string, any>();
+                                    for (const ts of (effectiveTabStops || [])) byPos.set(String(ts.posTwips), ts);
+                                    for (const ts of style.tabStops) byPos.set(String(ts.posTwips), ts);
+                                    effectiveTabStops = Array.from(byPos.values()).sort((a, b) => parseInt(a.posTwips) - parseInt(b.posTwips));
+                                }
                                 if (style.runProps) {
                                     effectiveRunProps = { ...effectiveRunProps, ...style.runProps };
                                 }
@@ -1323,6 +1421,24 @@ export class DocxReader {
                                     attrs.lineRule = effectiveSpacing.lineRule;
                                 }
                                 console.log('DEBUG parseParagraph: Resolved effective spacing for style ' + val + ':', effectiveSpacing);
+                            }
+
+                            // Apply resolved indentation to attributes if not overridden by direct formatting.
+                            // NOTE: "0" is a valid value and should be preserved.
+                            const hasVal = (v: any) => v !== undefined && v !== null;
+                            if (!hasVal(attrs.indent) && hasVal((effectiveIndent as any).left)) {
+                                attrs.indent = (effectiveIndent as any).left;
+                            }
+                            if (!hasVal(attrs.hanging) && hasVal((effectiveIndent as any).hanging)) {
+                                attrs.hanging = (effectiveIndent as any).hanging;
+                            }
+                            if (!hasVal(attrs.firstLine) && hasVal((effectiveIndent as any).firstLine)) {
+                                attrs.firstLine = (effectiveIndent as any).firstLine;
+                            }
+
+                            // Apply resolved tab stops if not overridden by direct formatting
+                            if (!attrs.tabStops && effectiveTabStops && effectiveTabStops.length) {
+                                attrs.tabStops = effectiveTabStops;
                             }
 
                             // Apply resolved run properties to paragraphDefaults (which become default for runs in this paragraph)
@@ -1350,10 +1466,38 @@ export class DocxReader {
                         const left = prop[':@']?.['w:left'] || prop[':@']?.['left'];
                         const hanging = prop[':@']?.['w:hanging'] || prop[':@']?.['hanging'];
                         const firstLine = prop[':@']?.['w:firstLine'] || prop[':@']?.['firstLine'];
+                        const leftChars = prop[':@']?.['w:leftChars'] || prop[':@']?.['leftChars'];
+                        const hangingChars = prop[':@']?.['w:hangingChars'] || prop[':@']?.['hangingChars'];
+                        const firstLineChars = prop[':@']?.['w:firstLineChars'] || prop[':@']?.['firstLineChars'];
 
                         if (left) attrs.indent = left;
                         if (hanging) attrs.hanging = hanging;
                         if (firstLine) attrs.firstLine = firstLine;
+                        if (leftChars) attrs.indentChars = leftChars;
+                        if (hangingChars) attrs.hangingChars = hangingChars;
+                        if (firstLineChars) attrs.firstLineChars = firstLineChars;
+                    }
+
+                    // Tab stops (<w:tabs><w:tab .../></w:tabs>)
+                    if (propKey === 'w:tabs' || propKey === 'tabs') {
+                        const tabsNode = prop[propKey];
+                        const rawTabs = tabsNode?.['w:tab'] || tabsNode?.['tab'];
+                        const tabArray = Array.isArray(rawTabs) ? rawTabs : (rawTabs ? [rawTabs] : []);
+
+                        const tabStops = tabArray
+                            .map((t: any) => {
+                                const a = t[':@'] || t;
+                                const posTwips = a?.['w:pos'] || a?.['pos'];
+                                const type = a?.['w:val'] || a?.['val'];
+                                const leader = a?.['w:leader'] || a?.['leader'];
+                                if (!posTwips || !type) return null;
+                                return { posTwips: String(posTwips), type: String(type), leader: leader ? String(leader) : undefined };
+                            })
+                            .filter(Boolean);
+
+                        if (tabStops.length) {
+                            attrs.tabStops = tabStops;
+                        }
                     }
 
                     // Spacing
@@ -1441,7 +1585,7 @@ export class DocxReader {
             // Fallback: If no style was explicitly applied, inherit from docDefaults
             // Fallback: If no style was explicitly applied, inherit from docDefaults
             if (!attrs.styleId) {
-                if (this.docDefaults.pPr && this.docDefaults.pPr.spacing) {
+                if (this.docDefaults?.pPr?.spacing) {
                     const def = this.docDefaults.pPr.spacing;
                     if (!attrs.spacingBefore && def.before) attrs.spacingBefore = def.before;
                     if (!attrs.spacingAfter && def.after) attrs.spacingAfter = def.after;
@@ -1772,6 +1916,13 @@ export class DocxReader {
                 } else {
                     nodes.push({ type: 'hardBreak' });
                 }
+            }
+
+            // Tabs: w:tab
+            const tabKey = keys.find(k => k === 'w:tab' || k === 'tab');
+            if (tabKey) {
+                flushText();
+                nodes.push({ type: 'tab' });
             }
         });
 

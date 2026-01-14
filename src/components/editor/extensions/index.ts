@@ -13,12 +13,176 @@
  * - CustomHeading: Extended heading with styleId for DOCX roundtrip
  */
 
-import { Extension, Mark } from '@tiptap/core';
+import { Extension, Mark, Node, mergeAttributes } from '@tiptap/core';
 import { Plugin, PluginKey } from '@tiptap/pm/state';
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import Paragraph from '@tiptap/extension-paragraph';
 import Heading from '@tiptap/extension-heading';
 import OrderedList from '@tiptap/extension-ordered-list';
+
+/**
+ * DOCX Tab node
+ * - Represents <w:tab/> in WordprocessingML
+ * - Rendering is handled by TabStopLayout (width to next tab stop + leader fill)
+ */
+export const DocxTab = Node.create({
+    name: 'tab',
+    group: 'inline',
+    inline: true,
+    atom: true,
+    selectable: false,
+
+    addAttributes() {
+        return {
+            leader: {
+                default: null,
+                parseHTML: element => element.getAttribute('data-leader'),
+                renderHTML: attributes => (attributes.leader ? { 'data-leader': attributes.leader } : {}),
+            },
+        };
+    },
+
+    parseHTML() {
+        return [{ tag: 'span[data-docx-tab="true"]' }];
+    },
+
+    renderHTML({ HTMLAttributes }) {
+        return [
+            'span',
+            mergeAttributes(HTMLAttributes, {
+                'data-docx-tab': 'true',
+                class: `docx-tab ${HTMLAttributes.class || ''}`.trim(),
+                contenteditable: 'false',
+            }),
+        ];
+    },
+});
+
+/**
+ * Tab stop layout pass
+ * Computes tab widths (in px) to the next resolved tab stop for each paragraph.
+ *
+ * Notes:
+ * - This is a "strong approximation" optimized for common contract usage (single-line tab alignment).
+ * - We avoid DOM mutation other than setting inline styles on the tab spans.
+ */
+export const TabStopLayout = Extension.create({
+    name: 'tabStopLayout',
+
+    addProseMirrorPlugins() {
+        return [
+            new Plugin({
+                key: new PluginKey('tabStopLayout'),
+                view: view => {
+                    // Guard for SSR / non-browser contexts
+                    if (typeof window === 'undefined') return {};
+
+                    let raf = 0;
+
+                    const schedule = () => {
+                        if (raf) return;
+                        raf = window.requestAnimationFrame(() => {
+                            raf = 0;
+                            try {
+                                layoutDocxTabs(view.dom as HTMLElement);
+                            } catch {
+                                // Best-effort layout; never break editing.
+                            }
+                        });
+                    };
+
+                    // Initial layout
+                    schedule();
+
+                    return {
+                        update: () => schedule(),
+                        destroy: () => {
+                            if (raf) window.cancelAnimationFrame(raf);
+                        },
+                    };
+                },
+            }),
+        ];
+    },
+});
+
+function layoutDocxTabs(root: HTMLElement) {
+    const paragraphs = root.querySelectorAll('p:has(span[data-docx-tab="true"])');
+    if (!paragraphs.length) return;
+
+    // Convert twips -> px (1pt = 96/72px, 1twip = 1/20pt)
+    const twipsToPx = (twips: number) => (twips / 20) * (96 / 72);
+
+    for (const p of paragraphs) {
+        const tabStopsJson = p.getAttribute('data-tab-stops');
+        if (!tabStopsJson) continue;
+
+        let tabStops: Array<{ posTwips: string; type: string; leader?: string }> = [];
+        try {
+            tabStops = JSON.parse(tabStopsJson);
+        } catch {
+            continue;
+        }
+        if (!Array.isArray(tabStops) || tabStops.length === 0) continue;
+
+        const stops = tabStops
+            .filter(s => s && s.posTwips && s.type)
+            .map(s => ({ posPx: twipsToPx(parseInt(s.posTwips)), type: s.type, leader: s.leader }))
+            .sort((a, b) => a.posPx - b.posPx);
+
+        const pRect = p.getBoundingClientRect();
+        const paddingLeft = parseFloat(window.getComputedStyle(p).paddingLeft || '0') || 0;
+        const startLeft = pRect.left + paddingLeft;
+
+        const tabSpans = Array.from(p.querySelectorAll('span[data-docx-tab="true"]')) as HTMLElement[];
+        for (let i = 0; i < tabSpans.length; i++) {
+            const tab = tabSpans[i];
+            // Reset styles each pass
+            tab.style.display = 'inline-block';
+            tab.style.width = '0px';
+            tab.style.minWidth = '0px';
+
+            const tabLeft = tab.getBoundingClientRect().left - startLeft;
+            const stop = stops.find(s => s.posPx > tabLeft + 0.5);
+            if (!stop) continue;
+
+            // Apply leader from stop unless explicitly overridden on the node
+            const leader = tab.getAttribute('data-leader') || stop.leader || '';
+            if (leader) tab.setAttribute('data-leader', leader);
+            else tab.removeAttribute('data-leader');
+
+            // Measure following content up to the next tab (used for right/center alignment)
+            let trailingWidth = 0;
+            if (stop.type === 'right' || stop.type === 'center') {
+                try {
+                    const range = document.createRange();
+                    range.setStartAfter(tab);
+                    const nextTab = tabSpans[i + 1];
+                    if (nextTab) range.setEndBefore(nextTab);
+                    else range.setEndAfter(p.lastChild as ChildNode);
+                    trailingWidth = range.getBoundingClientRect().width;
+                } catch {
+                    trailingWidth = 0;
+                }
+            }
+
+            let width = 0;
+            if (stop.type === 'right') {
+                width = stop.posPx - tabLeft - trailingWidth;
+            } else if (stop.type === 'center') {
+                width = stop.posPx - tabLeft - trailingWidth / 2;
+            } else {
+                // left / default
+                width = stop.posPx - tabLeft;
+            }
+
+            // Clamp to avoid negative widths (can happen when content overflows)
+            width = Math.max(0, width);
+            tab.style.width = `${width}px`;
+            tab.style.minWidth = `${Math.min(width, 4)}px`;
+        }
+    }
+}
 
 /**
  * Map DOCX numFmt values to CSS list-style-type values
@@ -251,12 +415,17 @@ export const CustomParagraph = Paragraph.extend({
                 parseHTML: element => element.getAttribute('data-indent'),
                 renderHTML: attributes => {
                     if (!attributes.indent) return {};
-                    // Convert twips to pt
-                    const indentPt = parseInt(attributes.indent) / 20;
                     return {
                         'data-indent': attributes.indent,
-                        style: `margin-left: ${indentPt}pt;`,
                     };
+                },
+            },
+            indentChars: {
+                default: null,
+                parseHTML: element => element.getAttribute('data-indent-chars'),
+                renderHTML: attributes => {
+                    if (!attributes.indentChars) return {};
+                    return { 'data-indent-chars': attributes.indentChars };
                 },
             },
             hanging: {
@@ -264,11 +433,17 @@ export const CustomParagraph = Paragraph.extend({
                 parseHTML: element => element.getAttribute('data-hanging'),
                 renderHTML: attributes => {
                     if (!attributes.hanging) return {};
-                    const hangingPt = parseInt(attributes.hanging) / 20;
                     return {
                         'data-hanging': attributes.hanging,
-                        style: `text-indent: -${hangingPt}pt;`,
                     };
+                },
+            },
+            hangingChars: {
+                default: null,
+                parseHTML: element => element.getAttribute('data-hanging-chars'),
+                renderHTML: attributes => {
+                    if (!attributes.hangingChars) return {};
+                    return { 'data-hanging-chars': attributes.hangingChars };
                 },
             },
             firstLine: {
@@ -276,11 +451,17 @@ export const CustomParagraph = Paragraph.extend({
                 parseHTML: element => element.getAttribute('data-first-line'),
                 renderHTML: attributes => {
                     if (!attributes.firstLine) return {};
-                    const firstLinePt = parseInt(attributes.firstLine) / 20;
                     return {
                         'data-first-line': attributes.firstLine,
-                        style: `text-indent: ${firstLinePt}pt;`,
                     };
+                },
+            },
+            firstLineChars: {
+                default: null,
+                parseHTML: element => element.getAttribute('data-first-line-chars'),
+                renderHTML: attributes => {
+                    if (!attributes.firstLineChars) return {};
+                    return { 'data-first-line-chars': attributes.firstLineChars };
                 },
             },
             lineHeight: {
@@ -290,46 +471,9 @@ export const CustomParagraph = Paragraph.extend({
                     if (!attributes.lineHeight) {
                         return {};
                     }
-
-                    const lineValue = parseInt(attributes.lineHeight);
-                    const lineRule = attributes.lineRule || 'auto';
-
-                    let cssValue: string;
-
-                    if (lineRule === 'exact') {
-                        // Fixed line height in points
-                        // For "exact" spacing, lineValue is in twips (1/20 pt)
-                        // This creates a fixed vertical space regardless of font size
-                        const ptValue = lineValue / 20;
-                        cssValue = `${ptValue}pt`;
-                    } else if (lineRule === 'atLeast') {
-                        // Minimum line height
-                        // CSS doesn't have min-line-height, so we use regular line-height
-                        // This enforces minimum but may not expand beyond it like Word does
-                        const ptValue = lineValue / 20;
-                        cssValue = `${ptValue}pt`;
-                    } else {
-                        // lineRule === 'auto' (or default)
-                        // Multiplier mode: lineValue is in 240ths of a line
-                        // e.g., 276 / 240 = 1.15 (representing "Multiple 1.15" in Word)
-                        //
-                        // IMPORTANT: Word's "Multiple" spacing multiplies the font's NATURAL line height,
-                        // not the font-size. For Japanese fonts, natural line-height is typically ~1.5x font-size.
-                        // CSS line-height multiplies font-size directly.
-                        //
-                        // To match Word: cssLineHeight = (docxMultiplier) * (naturalLineHeight / fontSize)
-                        // For most fonts, naturalLineHeight ≈ 1.2 to 1.5 times fontSize.
-                        //
-                        // Using 1.3 as a middle ground factor to approximate Word's behavior
-                        const docxMultiplier = lineValue / 240;
-                        const baseLineFactor = 1.3;
-                        cssValue = (docxMultiplier * baseLineFactor).toFixed(3);
-                    }
-
                     return {
                         'data-line-height': attributes.lineHeight,
-                        'data-line-rule': lineRule,
-                        style: `line-height: ${cssValue};`,
+                        'data-line-rule': attributes.lineRule || 'auto',
                     };
                 },
             },
@@ -338,11 +482,8 @@ export const CustomParagraph = Paragraph.extend({
                 parseHTML: element => element.getAttribute('data-spacing-before'),
                 renderHTML: attributes => {
                     if (!attributes.spacingBefore) return {};
-                    // Convert twips to pt (twips / 20)
-                    const ptValue = parseInt(attributes.spacingBefore) / 20;
                     return {
                         'data-spacing-before': attributes.spacingBefore,
-                        style: `margin-top: ${ptValue}pt;`,
                     };
                 }
             },
@@ -351,11 +492,8 @@ export const CustomParagraph = Paragraph.extend({
                 parseHTML: element => element.getAttribute('data-spacing-after'),
                 renderHTML: attributes => {
                     if (!attributes.spacingAfter) return {};
-                    // Convert twips to pt (twips / 20)
-                    const ptValue = parseInt(attributes.spacingAfter) / 20;
                     return {
                         'data-spacing-after': attributes.spacingAfter,
-                        style: `margin-bottom: ${ptValue}pt;`,
                     };
                 }
             },
@@ -425,6 +563,27 @@ export const CustomParagraph = Paragraph.extend({
                     if (!attributes.pPrFontFamily) return {};
                     return { 'data-ppr-font-family': attributes.pPrFontFamily };
                 }
+            },
+            // Tab stops (serialized as JSON for the layout pass)
+            tabStops: {
+                default: null,
+                parseHTML: element => {
+                    const raw = element.getAttribute('data-tab-stops');
+                    if (!raw) return null;
+                    try {
+                        return JSON.parse(raw);
+                    } catch {
+                        return null;
+                    }
+                },
+                renderHTML: attributes => {
+                    if (!attributes.tabStops) return {};
+                    try {
+                        return { 'data-tab-stops': JSON.stringify(attributes.tabStops) };
+                    } catch {
+                        return {};
+                    }
+                },
             },
             // ========== LIST NUMBERING ATTRIBUTES (paragraph-based rendering) ==========
             listNumId: {
@@ -523,6 +682,75 @@ export const CustomParagraph = Paragraph.extend({
                 }
             },
         };
+    },
+
+    renderHTML({ node, HTMLAttributes }) {
+        const styles: string[] = [];
+
+        // Helper: DOCX *Chars are in hundredths of a character.
+        // We map them to em so Japanese full-width indents align with font metrics.
+        const charsToEm = (chars: any) => `${parseInt(chars) / 100}em`;
+
+        // Indentation
+        // Prefer twips-based values when present (Word often writes both *and* the *Chars value can be a weaker hint).
+        if (node.attrs.indent) {
+            const indentPt = parseInt(node.attrs.indent) / 20;
+            styles.push(`margin-left: ${indentPt}pt;`);
+        } else if (node.attrs.indentChars) {
+            styles.push(`margin-left: ${charsToEm(node.attrs.indentChars)};`);
+        }
+
+        // DOCX indent model: firstLine and hanging are mutually exclusive in most docs.
+        // If both exist, prioritize firstLine (positive).
+        // Prefer twips-based values when present; fall back to *Chars when twips are absent.
+        if (node.attrs.firstLine) {
+            const firstLinePt = parseInt(node.attrs.firstLine) / 20;
+            styles.push(`text-indent: ${firstLinePt}pt;`);
+        } else if (node.attrs.firstLineChars) {
+            styles.push(`text-indent: ${charsToEm(node.attrs.firstLineChars)};`);
+        } else if (node.attrs.hanging) {
+            const hangingPt = parseInt(node.attrs.hanging) / 20;
+            styles.push(`text-indent: -${hangingPt}pt;`);
+        } else if (node.attrs.hangingChars) {
+            styles.push(`text-indent: -${charsToEm(node.attrs.hangingChars)};`);
+        }
+
+        // Line height
+        if (node.attrs.lineHeight) {
+            const lineValue = parseInt(node.attrs.lineHeight);
+            const lineRule = node.attrs.lineRule || 'auto';
+
+            let cssValue: string;
+
+            if (lineRule === 'exact' || lineRule === 'atLeast') {
+                // Fixed/min line height in twips (1/20 pt)
+                cssValue = `${lineValue / 20}pt`;
+            } else {
+                // Multiplier mode: value is in 240ths of a line
+                const docxMultiplier = lineValue / 240;
+                const baseLineFactor = 1.3;
+                cssValue = (docxMultiplier * baseLineFactor).toFixed(3);
+            }
+
+            styles.push(`line-height: ${cssValue};`);
+        }
+
+        // Paragraph spacing (DOCX twips -> pt)
+        if (node.attrs.spacingBefore) {
+            styles.push(`margin-top: ${parseInt(node.attrs.spacingBefore) / 20}pt;`);
+        }
+        if (node.attrs.spacingAfter) {
+            styles.push(`margin-bottom: ${parseInt(node.attrs.spacingAfter) / 20}pt;`);
+        }
+
+        const existingStyle = HTMLAttributes.style ? String(HTMLAttributes.style) : '';
+        const mergedStyle = [existingStyle, ...styles].filter(Boolean).join(' ');
+
+        return [
+            'p',
+            mergeAttributes(this.options.HTMLAttributes, HTMLAttributes, mergedStyle ? { style: mergedStyle } : {}),
+            0,
+        ];
     },
 });
 

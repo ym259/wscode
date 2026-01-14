@@ -35,6 +35,7 @@ interface DocAttrs {
     indent?: string;
     hanging?: string;
     firstLine?: string;
+    tabStops?: Array<{ posTwips: string; type: string; leader?: string }>;
     pPrFontSize?: string;
     pPrFontFamily?: string;
     originalNumId?: string;
@@ -308,6 +309,8 @@ ${sectPr}
                 return this.serializeTableCell(node);
             case 'hardBreak':
                 return '<w:r><w:br/></w:r>';
+            case 'tab':
+                return '<w:r><w:tab/></w:r>';
             case 'text':
                 return this.serializeTextRun(node);
             default:
@@ -404,6 +407,20 @@ ${sectPr}
 
             if (pPrIndent) {
                 pPr += `<w:ind${pPrIndent}/>`;
+            }
+        }
+
+        // Tab stops
+        if (attrs?.tabStops && Array.isArray(attrs.tabStops) && attrs.tabStops.length) {
+            const tabsXml = attrs.tabStops
+                .filter(ts => ts?.posTwips && ts?.type)
+                .map(ts => {
+                    const leaderAttr = ts.leader ? ` w:leader="${this.escapeXml(ts.leader)}"` : '';
+                    return `<w:tab w:val="${this.escapeXml(ts.type)}" w:pos="${this.escapeXml(ts.posTwips)}"${leaderAttr}/>`;
+                })
+                .join('');
+            if (tabsXml) {
+                pPr += `<w:tabs>${tabsXml}</w:tabs>`;
             }
         }
 

@@ -134,6 +134,9 @@ export const PagedEditorContent: React.FC<PagedEditorContentProps> = ({
 
     const contentAreaHeight = pageHeight - marginTop - marginBottom;
     const pageGap = 32;
+    // Word-style hanging indents often render content slightly left of the text box.
+    // In paged mode we clip content; expand horizontal clip so hanging indents aren't cut off.
+    const horizontalClipPaddingPx = 2000;
 
     /**
      * Get all visual line rects within a block element.
@@ -374,7 +377,8 @@ export const PagedEditorContent: React.FC<PagedEditorContentProps> = ({
                         minHeight: isPaged ? undefined : `${pageHeight}px`,
                         backgroundColor: '#ffffff',
                         boxShadow: '0 2px 8px rgba(0,0,0,0.15), 0 1px 3px rgba(0,0,0,0.1)',
-                        overflow: isPaged ? 'hidden' : 'visible',
+                        overflowY: isPaged ? 'hidden' : 'visible',
+                        overflowX: 'visible',
                     }}
                 >
                     <PageCorners />
@@ -393,10 +397,11 @@ export const PagedEditorContent: React.FC<PagedEditorContentProps> = ({
                             marginRight: isPaged ? undefined : `${marginRight}px`,
                             marginBottom: isPaged ? undefined : `${marginBottom}px`,
                             height: isPaged ? `${contentAreaHeight}px` : 'auto',
-                            overflow: isPaged ? 'hidden' : 'visible',
+                            overflowY: isPaged ? 'hidden' : 'visible',
+                            overflowX: 'visible',
                             // Clip content precisely at the line boundary where page 1 ends
                             clipPath: isPaged && pages[0]?.visibleHeight && pages[0].visibleHeight < contentAreaHeight
-                                ? `inset(0 0 ${contentAreaHeight - pages[0].visibleHeight}px 0)`
+                                ? `inset(0 -${horizontalClipPaddingPx}px ${contentAreaHeight - pages[0].visibleHeight}px -${horizontalClipPaddingPx}px)`
                                 : undefined,
                             // Set document default font size, line-height, and paragraph spacing as CSS custom properties
                             '--doc-default-font-size': `${defaultFontSizePt}pt`,
@@ -432,7 +437,8 @@ export const PagedEditorContent: React.FC<PagedEditorContentProps> = ({
                                 height: `${pageHeight}px`,
                                 backgroundColor: '#ffffff',
                                 boxShadow: '0 2px 8px rgba(0,0,0,0.15), 0 1px 3px rgba(0,0,0,0.1)',
-                                overflow: 'hidden',
+                                overflowY: 'hidden',
+                                overflowX: 'visible',
                             }}
                         >
                             <PageCorners />
@@ -445,10 +451,11 @@ export const PagedEditorContent: React.FC<PagedEditorContentProps> = ({
                                     left: `${marginLeft}px`,
                                     right: `${marginRight}px`,
                                     height: `${contentAreaHeight}px`,
-                                    overflow: 'hidden',
+                                    overflowY: 'hidden',
+                                    overflowX: 'visible',
                                     // Clip content precisely at the line boundary where this page ends
                                     clipPath: pageInfo.visibleHeight < contentAreaHeight
-                                        ? `inset(0 0 ${contentAreaHeight - pageInfo.visibleHeight}px 0)`
+                                        ? `inset(0 -${horizontalClipPaddingPx}px ${contentAreaHeight - pageInfo.visibleHeight}px -${horizontalClipPaddingPx}px)`
                                         : undefined,
                                     // Pass CSS variables for consistent styling with page 1
                                     '--doc-paragraph-spacing': `${paragraphSpacingPt}pt`,

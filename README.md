@@ -77,6 +77,10 @@ npm start
 - **Styling**: CSS Modules
 - **Icons**: [Lucide React](https://lucide.dev)
 
+## Docs
+
+- **DOCX → Editor Mapping Spec**: `docs/docx_custom_editor_mapping.md`
+
 ## Project Structure
 
 ```
